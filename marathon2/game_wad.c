@@ -9,11 +9,16 @@ Sunday, September 25, 1994 5:03:54 PM  (alain)
 	the redundant data isn't saved.
 Sunday, November 6, 1994 5:35:34 PM
 	added support for the unified platforms/doors, cleaned up some old code of mine...
+Saturday, August 26, 1995 2:28:56 PM
+	made portable.
 */
 
 // This needs to do the right thing on save game, which is storing the precalculated crap.
 
-#include "macintosh_cseries.h"
+#include "cseries.h"
+
+#include <string.h>
+
 #include "map.h"
 #include "monsters.h"
 #include "network.h"
@@ -32,7 +37,6 @@ Sunday, November 6, 1994 5:35:34 PM
 #include "wad.h"
 #include "game_wad.h"
 #include "interface.h"
-#include "shell.h"
 #include "game_window.h"
 #include "game_errors.h"
 #include "computer_interface.h" // for loading/saving terminal state.
@@ -45,9 +49,19 @@ Sunday, November 6, 1994 5:35:34 PM
 // unify the save game code into one structure.
 
 /* -------- local globals */
-static FSSpec current_map_file;
+static FileDesc current_map_file;
 static boolean file_is_set= FALSE;
-FSSpec current_saved_game;
+
+// The following local globals are for handling games that need to be restored.
+struct revert_game_info
+{
+	boolean game_is_from_disk;
+	struct game_data game_information;
+	struct player_start_data player_start;
+	struct entry_point entry_point;
+	FileDesc saved_game;
+};
+static struct revert_game_info revert_game_data;
 
 /* Borrowed from the old lightsource.h, to allow Marathon II to open/use Marathon I maps */
 struct old_light_data {
@@ -80,13 +94,12 @@ enum /* old light types */
 
 /* -------- static functions */
 static void scan_and_add_scenery(void);
-static void get_default_map_spec(FSSpec *new);
 static void complete_restoring_level(struct wad_data *wad);
 static void load_redundant_map_data(short *redundant_data, short count);
 static void scan_and_add_platforms(struct static_platform_data *platform_static_data,
 	short count);
-static boolean check_for_duplicate_serial_numbers(void);
 static void allocate_map_structure_for_map(struct wad_data *wad);
+static struct wad_data *build_save_game_wad(struct wad_header *header, long *length);
 
 /* ------------------------ Net functions */
 long get_net_map_data_length(
@@ -127,18 +140,20 @@ void *get_map_for_net_transfer(
 
 /* This takes a cstring */
 void set_map_file(
-	FSSpec *file)
+	FileDesc *file)
 {
-	memcpy(&current_map_file, file, sizeof(FSSpec));
+	memcpy(&current_map_file, file, sizeof(FileDesc));
 	set_scenario_images_file(file);
 	file_is_set= TRUE;
+	
+	return;
 }
 
 /* Set to the default map.. (Only if no map doubleclicked upon on startup.. */
 void set_to_default_map(
 	void)
 {
-	FSSpec new_map;
+	FileDesc new_map;
 	
 	get_default_map_spec(&new_map);
 	set_map_file(&new_map);
@@ -149,17 +164,18 @@ void set_to_default_map(
 /* Return TRUE if it finds the file, and it sets the mapfile to that file. */
 /* Otherwise it returns FALSE, meaning that we need have the file sent to us. */
 boolean use_map_file(
-	long checksum)
+	long checksum) /* Should be unsigned long */
 {
-	FSSpec file;
+	FileDesc file;
+	boolean success= FALSE;
 
-	if(match_checksum_with_map(0, 0, checksum, &file))
+	if(find_wad_file_that_has_checksum(&file, SCENARIO_FILE_TYPE, strPATHS, checksum))
 	{
 		set_map_file(&file);
-		return TRUE;
+		success= TRUE;
 	}
 
-	return FALSE;
+	return success;
 }
 
 boolean load_level_from_map(
@@ -184,8 +200,9 @@ boolean load_level_from_map(
 		}
 	
 //		file_handle= open_union_wad_file_for_reading(&current_map_file);
+//		if(file_handle!=0)
 		file_handle= open_wad_file_for_reading(&current_map_file);
-		if(file_handle!=0)
+		if(file_handle!=NONE)
 		{
 			/* Read the file */
 			if(read_wad_header(file_handle, &header))
@@ -222,36 +239,6 @@ boolean load_level_from_map(
 	/* ... and bail */
 	return (!error_pending());
 }
-
-#ifdef OBSOLETE
-/* Returns a wad for sending over the net.  Be aware that the memory must be */
-/* freed by someone... */
-byte *get_map_for_net_transfer(struct entry_point *entry, long *length)
-{
-	fileref file_handle;
-	struct wad_header header;
-	byte *wad= (byte *) NULL;
-	boolean success= FALSE;
-
-	assert(file_is_set);
-	file_handle= open_wad_file_for_reading(&current_map_file);
-	if (file_handle != -1);
-	{
-		/* Read the file */
-		success= read_wad_header(file_handle, &header);
-		if (success)
-		{
-			assert(entry->level_number>=0 && entry->level_number<header.wad_count);
-			wad= read_indexed_wad_from_file(file_handle, &header, entry->level_number, length);
-		}
-		
-		/* Close the file.. */
-		close_wad_file(file_handle);
-	}
-
-	return wad;
-}
-#endif
 
 /* Hopefully this is in the correct order of initialization... */
 /* This sucks, beavis. */
@@ -361,20 +348,6 @@ unsigned long get_current_map_checksum(
 	return header.checksum;
 }
 
-boolean select_map_to_use(
-	void)
-{
-	boolean success= FALSE;
-	FSSpec file;
-	
-	if(find_map_to_use(&file))
-	{
-		set_map_file(&file);
-		success= TRUE;
-	}
-	return success;
-}
-
 boolean new_game(
 	short number_of_players, 
 	boolean network,
@@ -392,8 +365,8 @@ boolean new_game(
 	game_is_networked= network;
 	
 	/* If we want to save it, this is an untitled map.. */
-	get_my_fsspec(&current_saved_game);
-	getpstr(current_saved_game.name, strFILENAMES, filenameDEFAULT_SAVE_GAME);
+	get_application_filedesc(&revert_game_data.saved_game);
+	getpstr(revert_game_data.saved_game.name, strFILENAMES, filenameDEFAULT_SAVE_GAME);
 
 	/* Set the random seed. */
 	set_random_seed(game_information->initial_random_seed);
@@ -436,12 +409,6 @@ boolean new_game(
 			
 			set_local_player_index(NetGetLocalPlayerIndex());
 			set_current_player_index(NetGetLocalPlayerIndex());
-
-#ifndef BETA
-#ifndef DEMO			
-//			success= !check_for_duplicate_serial_numbers();
-#endif
-#endif
 		}
 		else
 		{
@@ -547,14 +514,6 @@ boolean get_indexed_entry_point(
 	}
 
 	return success;
-}
-
-void find_parent_scenario(
-	FSSpec *file)
-{
-	/* For now, just get the default one.  Later this should actually */
-	/* Find the proper map (current_map is set to the save game file) */
-	get_default_map_spec(file);
 }
 
 /* This is called when the game level is changed somehow */
@@ -916,6 +875,188 @@ void recalculate_redundant_map(
 	for(loop=0;loop<dynamic_world->endpoint_count;++loop) recalculate_redundant_endpoint_data(loop);
 }
 
+boolean load_game_from_file(
+	FileDesc *file)
+{
+	boolean success= FALSE;
+
+	/* Must reset this, in case they played a net game before this one. */
+	game_is_networked= FALSE;
+
+	/* Setup for a revert.. */
+	revert_game_data.game_is_from_disk = TRUE;
+	memcpy(&revert_game_data.saved_game, file, sizeof(FileDesc));
+
+	/* Use the save game file.. */
+	set_map_file(file);
+	
+	/* Load the level from the map */
+	success= load_level_from_map(NONE); /* Save games are ALWAYS index NONE */
+
+	if (success)
+	{
+		unsigned long parent_checksum;
+	
+		/* Set the non-saved data.... */
+		set_current_player_index(0);
+		set_local_player_index(0);
+
+		/* Find the original scenario this saved game was a part of.. */
+		parent_checksum= read_wad_file_parent_checksum(file);
+		if(!use_map_file(parent_checksum))
+		{
+			/* Tell the user they’re screwed when they try to leave this level. */
+			alert_user(infoError, strERRORS, cantFindMap, 0);
+		
+			/* Set to the default map. */
+			set_to_default_map();
+		}
+
+		/* Set the random seed. */
+		set_random_seed(dynamic_world->random_seed);
+		
+		/* Load the shapes and whatnot.. */		
+		entering_map();
+	} 
+
+	return success;
+}
+
+void setup_revert_game_info(
+	struct game_data *game_info, 
+	struct player_start_data *start, 
+	struct entry_point *entry)
+{
+	revert_game_data.game_is_from_disk = FALSE;
+	memcpy(&revert_game_data.game_information, game_info, sizeof(struct game_data));
+	memcpy(&revert_game_data.player_start, start, sizeof(struct player_start_data));
+	memcpy(&revert_game_data.entry_point, entry, sizeof(struct entry_point));
+	
+	return;
+}
+
+boolean revert_game(
+	void)
+{
+	boolean successful;
+	
+	assert(dynamic_world->player_count==1);
+
+	leaving_map();
+	
+	if (revert_game_data.game_is_from_disk)
+	{
+		/* Reload their last saved game.. */
+		successful= load_game_from_file(&revert_game_data.saved_game);
+
+		/* And they don't get to continue. */
+		stop_recording();
+	}
+	else
+	{
+		/* This was the totally evil line discussed above. */
+		successful= new_game(1, FALSE, &revert_game_data.game_information, &revert_game_data.player_start, 
+			&revert_game_data.entry_point);
+			
+		/* And rewind so that the last player is used. */
+		rewind_recording();
+	}
+
+	if(successful)
+	{
+		update_interface(NONE);
+	}
+	
+	return successful;
+}
+
+void get_current_saved_game_name(
+	char *file_name)
+{
+	memcpy(file_name, revert_game_data.saved_game.name, revert_game_data.saved_game.name[0]+1);
+}
+
+/* The current mapfile should be set to the save game file... */
+boolean save_game_file(
+	FileDesc *file)
+{
+	struct wad_header header;
+	FileError err;
+	boolean success= FALSE;
+	short file_ref;
+	long offset, wad_length;
+	struct directory_entry entry;
+	struct wad_data *wad;
+
+	/* Save off the random seed. */
+	dynamic_world->random_seed= get_random_seed();
+
+	/* Setup to revert the game properly */
+	revert_game_data.game_is_from_disk= TRUE; 
+	memcpy(&revert_game_data.saved_game, file, sizeof(FileDesc));
+
+	/* Fill in the default wad header */
+	fill_default_wad_header(file, CURRENT_WADFILE_VERSION, EDITOR_MAP_VERSION, 1, 0, &header);
+		
+	/* Assume that we confirmed on save as... */
+	err= create_wadfile(file, SAVE_GAME_TYPE);
+	
+	if(!err)
+	{
+		file_ref= open_wad_file_for_writing(file); /* returns -1 on error */
+		if (file_ref>=0)
+		{
+			/* Write out the new header */
+			if (write_wad_header(file_ref, &header))
+			{
+				offset= sizeof(struct wad_header);
+		
+				wad= build_save_game_wad(&header, &wad_length);
+				if (wad)
+				{
+					/* Set the entry data.. */
+					set_indexed_directory_offset_and_length(&header, 
+						&entry, 0, offset, wad_length, 0);
+					
+					/* Save it.. */
+					if (write_wad(file_ref, &header, wad, offset))
+					{
+						/* Update the new header */
+						offset+= wad_length;
+						header.directory_offset= offset;
+						header.parent_checksum= read_wad_file_checksum(&current_map_file);
+						if (write_wad_header(file_ref, &header) && write_directorys(file_ref, &header, &entry))
+						{
+							/* This function saves the overhead map as a thumbnail, as well */
+							/*  as adding the string resource that tells you what it is when */
+							/*  it is clicked on & Marathon2 isn't installed.  Obviously, both */
+							/*  of these are superfluous for a dos environment. */
+							add_finishing_touches_to_save_file(file);
+
+							/* We win. */
+							success= TRUE;
+						} 
+					}
+
+					free_wad(wad);
+				}
+			}
+
+			close_wad_file(file_ref);
+		}
+	}
+
+	if(err || error_pending())
+	{
+		if(!err) err= get_game_error(NULL);
+		alert_user(infoError, strERRORS, fileError, err);
+		clear_game_error();
+		success= FALSE;
+	}
+	
+	return success;
+}
+
 /* -------- static functions */
 static void scan_and_add_platforms(
 	struct static_platform_data *platform_static_data,
@@ -1020,6 +1161,14 @@ boolean process_map_wad(
 			count= data_length/sizeof(struct static_light_data);
 			assert(count*sizeof(struct static_light_data)==data_length);
 			load_lights((struct static_light_data *) data, count, version);
+		}
+
+		//	HACK!!!!!!!!!!!!!!! vulcan doesn’t NONE .first_object field after adding scenery
+		{
+			for (count= 0; count<dynamic_world->polygon_count; ++count)
+			{
+				map_polygons[count].first_object= NONE;
+			}
 		}
 	}
 
@@ -1223,26 +1372,6 @@ static void scan_and_add_scenery(
 		
 		++saved_object;
 	} 
-}
-
-static void get_default_map_spec(
-	FSSpec *new)
-{
-	static boolean first_try= TRUE;
-	static FSSpec default_map_spec;
-
-	if (first_try)
-	{
-		OSErr error;
-
-		/* Get the Marathon FSSpec */
-		error= get_file_spec(&default_map_spec, strFILENAMES, filenameDEFAULT_MAP, strPATHS);
-		if (error!=noErr) alert_user(fatalError, strERRORS, badExtraFileLocations, error);
-		
-		first_try= FALSE;
-	}
-	
-	memcpy(new, &default_map_spec, sizeof(FSSpec));
 	
 	return;
 }
@@ -1419,7 +1548,7 @@ void *tag_to_global_array_and_size(
 }
 
 /* Build the wad, with all the crap */
-struct wad_data *build_save_game_wad(
+static struct wad_data *build_save_game_wad(
 	struct wad_header *header, 
 	long *length)
 {
@@ -1477,28 +1606,4 @@ static void complete_restoring_level(
 
 	/* Loading games needs this done. */
 	reset_player_queues();
-}
-
-static boolean check_for_duplicate_serial_numbers(
-	void)
-{
-	short i, j;
-	
-	for (i= 0; i<dynamic_world->player_count; ++i)
-	{
-		struct player_info *player1= NetGetPlayerData(i);
-		
-		for (j= i+1; j<dynamic_world->player_count; ++j)
-		{
-			struct player_info *player2= NetGetPlayerData(j);
-			
-			if (!memcmp(player1->long_serial_number, player2->long_serial_number, 10))
-			{
-				alert_user(fatalError, strERRORS, duplicateSerialNumbers, 0);
-				return TRUE;
-			}
-		}
-	}
-	
-	return FALSE;
 }

@@ -1,5 +1,5 @@
 /*
-MARATHON.R
+MARATHON2.R
 Thursday, August 20, 1992 7:15:23 PM
 
 Thursday, February 17, 1994 9:04:12 AM
@@ -14,30 +14,33 @@ Monday, March 28, 1994 3:08:23 PM
 #include "CodeFragmentTypes.r"
 
 #define CREATOR '52.4'
-#define VERSION "2.0"
-#define MAJOR_VERSION 2
+#define VERSION "1.0"
+#define MAJOR_VERSION 1
 #define MINOR_VERSION 0
 #define RELEASE_STAGE development
 #define PRE_RELEASE_REVISION 0
 
 #ifdef DEMO
 	#define SHORT_VERSION_STRING "v" VERSION
-	#define LONG_VERSION_STRING "v" VERSION " DEMO © 1994 Bungie Software Products Corp."
+	#define LONG_VERSION_STRING "v" VERSION " DEMO © 1995 Bungie Software Products Corp."
 #else
 	#define SHORT_VERSION_STRING "v" VERSION
-	#define LONG_VERSION_STRING "v" VERSION " © 1994 Bungie Software Products Corp."
+	#define LONG_VERSION_STRING "v" VERSION " © 1995 Bungie Software Products Corp."
 #endif
 
 #ifndef fat
 
 include ":binaries:marathon2.resource";
 include ":demos:demos.resource";
-include ":texts:texts.resource";
+/* include ":texts:texts.resource"; */
+/* include ":graphics:screens"; */
 
 #ifdef DEMO
 include ":binaries:demo.resource"; /* overrides resources in marathon.resource */
+include ":graphics:demo.screens";
 #else
 include ":binaries:game.resource";
+include ":graphics:game.screens";
 #endif
 #endif /* fat */
 
@@ -63,7 +66,7 @@ include ":binaries:game.resource";
 			kOnDiskFlat,
 			kZeroOffset,
 			kWholeFork,
-			"Marathon"
+			"Marathon 2"
 		}
 	};
 #endif

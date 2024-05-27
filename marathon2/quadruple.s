@@ -54,7 +54,7 @@ fpTemp2:		EQU		fp1
 
 	cmpi		0, 0, rTemp1, k16BitMode
 	beq			@quad16bit
-	cmpi		0, k16BitMode|kVerticalOnlyMode, rTemp1
+	cmpi		0, 0, rTemp1, k16BitMode|kVerticalOnlyMode
 	beq			@duo
 
 	cmpi		0, 0, rTemp1, k32BitMode

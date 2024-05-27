@@ -6,16 +6,18 @@
 */
 
 #include "macintosh_cseries.h"
+#include "my32bqd.h"
 
 #include "map.h"
 #include "shell.h"
 #include "preferences.h"
-#include "my32bqd.h"
-#include "images.h"
 #include "screen_drawing.h"
-#include "screen_definitions.h"
 #include "interface.h"
 #include "screen.h"
+#include "portable_files.h"
+#include "sound.h" // for screen_definitions.h
+#include "screen_definitions.h"
+#include "images.h"
 
 extern GrafPtr screen_window;
 extern GWorldPtr world_pixels;

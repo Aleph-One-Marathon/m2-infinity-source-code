@@ -21,6 +21,7 @@
 #include "game_wad.h" // for set_map_file
 #include "screen.h"
 #include "fades.h"
+#include "extensions.h"
 
 #include "tags.h"
 
@@ -136,6 +137,7 @@ static unsigned long find_checksum_and_file_spec_from_dialog(DialogPtr dialog,
 	short item_hit, OSType type, FSSpec *file);
 static void	rebuild_patchlist(DialogPtr dialog, short item, unsigned long parent_checksum,
 	struct environment_preferences_data *preferences);
+static unsigned long get_file_modification_date(FSSpec *file);
 
 /* ---------------- code */
 void initialize_preferences(
@@ -195,6 +197,7 @@ void handle_preferences(
 		/* Save the new ones. */
 		write_preferences();
 		set_sound_manager_parameters(sound_preferences);
+		load_environment_from_preferences();
 	}
 	
 	return;
@@ -314,13 +317,6 @@ static void default_serial_number_preferences(
 	struct serial_number_data *prefs)
 {
 	memset(prefs, 0, sizeof(struct serial_number_data));
-
-#if !defined(DEMO) && defined(FINAL)
-	/* This has to be done here, because ask_for_serial number expects the global */
-	/* variable to be valid. */
-	serial_preferences= prefs;
-	ask_for_serial_number();
-#endif
 }
 
 static boolean validate_serial_number_preferences(
@@ -336,12 +332,7 @@ static boolean ethernet_active(void);
 static void default_network_preferences(
 	struct network_preferences_data *preferences)
 {
-	if(ethernet_active())
-	{
-		preferences->type= _ethernet;
-	} else {
-		preferences->type= _localtalk;
-	}
+	preferences->type= _ethernet;
 
 	preferences->allow_microphone = TRUE;
 	preferences->game_is_untimed = FALSE;
@@ -965,12 +956,27 @@ struct file_description {
 static FSSpec *accessory_files= NULL;
 static struct file_description *file_descriptions= NULL;
 static short accessory_file_count= 0;
-static MenuHandle patch_menu;
+static boolean physics_valid= TRUE;
 
 static void default_environment_preferences(
 	struct environment_preferences_data *prefs)
 {
 	memset(prefs, NONE, sizeof(struct environment_preferences_data));
+
+	get_default_map_spec((FileDesc *) &prefs->map_file);
+	get_default_physics_spec((FileDesc *) &prefs->physics_file);
+	get_file_spec(&prefs->shapes_file, strFILENAMES, filenameSHAPES8, strPATHS);
+	get_file_spec(&prefs->sounds_file, strFILENAMES, filenameSOUNDS8, strPATHS);
+
+	/* Calculate their checksums.. */
+	prefs->map_checksum= read_wad_file_checksum((FileDesc *) &prefs->map_file);
+	prefs->physics_checksum= read_wad_file_checksum((FileDesc *) &prefs->physics_file);
+	
+	/* Calculate the modification dates. */
+	prefs->shapes_mod_date= get_file_modification_date(&prefs->shapes_file);
+	prefs->sounds_mod_date= get_file_modification_date(&prefs->sounds_file);
+
+	return;
 }
 
 static boolean validate_environment_preferences(
@@ -988,8 +994,6 @@ static void *get_environment_pref_data(
 		default_environment_preferences, validate_environment_preferences);
 }
 
-#define PATCH_MENU_ID 2003
-
 static void setup_environment_dialog(
 	DialogPtr dialog,
 	short first_item,
@@ -1000,10 +1004,6 @@ static void setup_environment_dialog(
 	if(allocate_extensions_memory())
 	{
 		SetCursor(*GetCursor(watchCursor));
-		
-		patch_menu= GetMenu(PATCH_MENU_ID);
-		assert(patch_menu);
-		InsertMenu(patch_menu, -1);
 
 		build_extensions_list();
 
@@ -1016,8 +1016,7 @@ static void setup_environment_dialog(
 			SHAPES_FILE_TYPE, preferences->shapes_mod_date);
 		fill_in_popup_with_filetype(dialog, LOCAL_TO_GLOBAL_DITL(iSOUNDS, first_item),
 			SOUNDS_FILE_TYPE, preferences->sounds_mod_date);
-		rebuild_patchlist(dialog, LOCAL_TO_GLOBAL_DITL(iPATCHES_LIST, first_item),
-			preferences->physics_checksum, preferences);
+
 		SetCursor(&qd.arrow);
 	} else {
 		halt();
@@ -1033,66 +1032,31 @@ static void hit_environment_item(
 	short item_hit)
 {
 	struct environment_preferences_data *preferences= prefs;
-	FSSpec file;
-	unsigned long checksum;
 
 #pragma unused(dialog);
 	switch(GLOBAL_TO_LOCAL_DITL(item_hit, first_item))
 	{
 		case iMAP:
-			checksum= find_checksum_and_file_spec_from_dialog(dialog, item_hit, 
-				SCENARIO_FILE_TYPE,	&file);
-			preferences->map_checksum= checksum;
-			set_map_file((FileDesc *) &file);
+			preferences->map_checksum= find_checksum_and_file_spec_from_dialog(dialog, item_hit, 
+				SCENARIO_FILE_TYPE,	&preferences->map_file);
 			break;
 			
 		case iPHYSICS:
-			checksum= find_checksum_and_file_spec_from_dialog(dialog, item_hit, 
-				PHYSICS_FILE_TYPE, &file);
-			preferences->physics_checksum= checksum;
-			set_physics_file((FileDesc *) &file);
-			rebuild_patchlist(dialog, LOCAL_TO_GLOBAL_DITL(iPATCHES_LIST, first_item),
-				checksum, preferences);
+			preferences->physics_checksum= find_checksum_and_file_spec_from_dialog(dialog, item_hit, 
+				PHYSICS_FILE_TYPE,	&preferences->physics_file);
 			break;
 			
 		case iSHAPES:
-			checksum= find_checksum_and_file_spec_from_dialog(dialog, item_hit,
-				SHAPES_FILE_TYPE, &file);
-			preferences->shapes_mod_date= checksum;
-			open_shapes_file(&file);
+			preferences->shapes_mod_date= find_checksum_and_file_spec_from_dialog(dialog, item_hit,
+				SHAPES_FILE_TYPE, &preferences->shapes_file);
 			break;
 
 		case iSOUNDS:
-			checksum= find_checksum_and_file_spec_from_dialog(dialog, item_hit,
-				SOUNDS_FILE_TYPE, &file);
-			preferences->sounds_mod_date= checksum;
-	 		open_sound_file(&file);
+			preferences->sounds_mod_date= find_checksum_and_file_spec_from_dialog(dialog, item_hit,
+				SOUNDS_FILE_TYPE, &preferences->sounds_file);
 			break;
 			
 		case iPATCHES_LIST:
-			{
-				long value;
-				short type, menu_item, mark;
-				Rect bounds;
-				Handle item;
-				Point pt;
-				GrafPtr old_port;
-				
-				GetPort(&old_port);
-				SetPort(dialog);
-				
-				GetDItem(dialog, LOCAL_TO_GLOBAL_DITL(iPATCHES_LIST, first_item), 
-					&type, &item, &bounds);
-				pt.v= bounds.top;
-				pt.h= bounds.left;
-				LocalToGlobal(&pt);
-				value= PopUpMenuSelect(patch_menu, pt.v, pt.h, 1);
-				menu_item= (value&0x0000ffff);
-				GetItemMark(patch_menu, menu_item, &mark);
-				CheckItem(patch_menu, menu_item, mark!=checkMark);
-
-				SetPort(old_port);
-			}
 			break;
 			
 		default:
@@ -1102,78 +1066,76 @@ static void hit_environment_item(
 	return;
 }
 
-static void	rebuild_patchlist(
-	DialogPtr dialog, 
-	short item,
-	unsigned long parent_checksum,
-	struct environment_preferences_data *preferences)
+/* Load the environment.. */
+void load_environment_from_preferences(
+	void)
 {
-	short index;
-	MenuHandle menu= patch_menu;
-	
-	while(CountMItems(menu))
+	FileDesc file;
+	OSErr error;
+	struct environment_preferences_data *prefs= environment_preferences;
+
+	error= FSMakeFSSpec(prefs->map_file.vRefNum, prefs->map_file.parID, prefs->map_file.name,
+		(FSSpec *) &file);
+	if(!error)
 	{
-		DeleteMenuItem(menu, 1);
-	}
-	
-	/* Now add the patches.. */
-	for(index= 0; index<accessory_file_count; ++index)
-	{
-		if(file_descriptions[index].file_type==PATCH_FILE_TYPE && 
-			file_descriptions[index].parent_checksum==parent_checksum)
+		set_map_file(&file);
+	} else {
+		/* Try to find the checksum */
+		if(find_wad_file_that_has_checksum(&file,
+			SCENARIO_FILE_TYPE, strPATHS, prefs->map_checksum))
 		{
-			boolean check_this= FALSE;
-			short search_index, item_number;
-			
-			for(search_index= 0; search_index<MAXIMUM_PATCHES_PER_ENVIRONMENT; ++search_index)
-			{
-				if(preferences->patches[search_index]==file_descriptions[index].checksum)
-				{
-					check_this= TRUE;
-				}
-			}
-			
-			AppendMenu(menu, "\p ");
-			item_number= CountMItems(menu);
-			SetMenuItemText(menu, item_number, accessory_files[index].name);
-			CheckItem(patch_menu, item_number, check_this);
+			set_map_file(&file);
+		} else {
+			set_to_default_map();
 		}
 	}
 
-	return;
-}
-
-static void	extract_patches(
-	DialogPtr dialog, 
-	short parameter_item,
-	struct environment_preferences_data *preferences)
-{
-	short index;
-	short item= 1;
-	short patch_count= 0;
-	
-	/* Now add the patches.. */
-	for(index= 0; index<accessory_file_count; ++index)
+	error= FSMakeFSSpec(prefs->physics_file.vRefNum, prefs->physics_file.parID, prefs->physics_file.name,
+		(FSSpec *) &file);
+	if(!error)
 	{
-		if(file_descriptions[index].file_type==PATCH_FILE_TYPE && 
-			file_descriptions[index].parent_checksum==preferences->physics_checksum)
+		set_physics_file(&file);
+		import_definition_structures();
+	} else {
+		if(find_wad_file_that_has_checksum(&file,
+			PHYSICS_FILE_TYPE, strPATHS, prefs->physics_checksum))
 		{
-			short mark;
-		
-			GetItemMark(patch_menu, item, &mark);
-dprintf("Trying: %P (%d)", accessory_files[index].name, file_descriptions[index].checksum);
-			if(mark==checkMark)
-			{
-				/* Add to our patches.. */
-				preferences->patches[patch_count++]= file_descriptions[index].checksum;
-dprintf("Adding: %P (%d)", accessory_files[index].name, file_descriptions[index].checksum);
-			}
-			item++;
+			set_physics_file(&file);
+			import_definition_structures();
+		} else {
+			/* Didn't find it.  Don't change them.. */
 		}
 	}
-	
-	/* Null out the rest of them.. */
-	while(patch_count<MAXIMUM_PATCHES_PER_ENVIRONMENT) preferences->patches[patch_count++]= 0l;
+
+	error= FSMakeFSSpec(prefs->shapes_file.vRefNum, prefs->shapes_file.parID, prefs->shapes_file.name,
+		(FSSpec *) &file);
+	if(!error)
+	{
+		open_shapes_file((FSSpec *) &file);
+	} else {
+		if(find_file_with_modification_date(&file,
+			SHAPES_FILE_TYPE, strPATHS, prefs->shapes_mod_date))
+		{
+			open_shapes_file((FSSpec *) &file);
+		} else {
+			/* What should I do? */
+		}
+	}
+
+	error= FSMakeFSSpec(prefs->sounds_file.vRefNum, prefs->sounds_file.parID, prefs->sounds_file.name,
+		(FSSpec *) &file);
+	if(!error)
+	{
+		open_sound_file((FSSpec *) &file);
+	} else {
+		if(find_file_with_modification_date(&file,
+			SOUNDS_FILE_TYPE, strPATHS, prefs->sounds_mod_date))
+		{
+			open_sound_file((FSSpec *) &file);
+		} else {
+			/* What should I do? */
+		}
+	}
 	
 	return;
 }
@@ -1183,14 +1145,34 @@ static boolean teardown_environment_dialog(
 	short first_item,
 	void *prefs)
 {
-dprintf("Teardown!");
-	extract_patches(dialog, LOCAL_TO_GLOBAL_DITL(iPATCHES_LIST, first_item),
-		prefs);
+#pragma unused (dialog, first_item);
+	struct environment_preferences_data *preferences= prefs;
 
+	/* Proceses the entire physics file.. */
 	free_extensions_memory();
-	DeleteMenu(PATCH_MENU_ID);
 	
 	return TRUE;
+}
+
+static unsigned long get_file_modification_date(
+	FSSpec *file)
+{
+	CInfoPBRec pb;
+	OSErr error;
+	unsigned long modification_date= 0l;
+	
+	memset(&pb, 0, sizeof(pb));
+	pb.hFileInfo.ioVRefNum= file->vRefNum;
+	pb.hFileInfo.ioNamePtr= file->name;
+	pb.hFileInfo.ioDirID= file->parID;
+	pb.hFileInfo.ioFDirIndex= 0;
+	error= PBGetCatInfoSync(&pb);
+	if(!error)
+	{
+		modification_date= pb.hFileInfo.ioFlMdDat;
+	}
+
+	return modification_date;
 }
 
 /* ---------------- miscellaneous */
@@ -1343,7 +1325,16 @@ static void build_extensions_list(
 		
 		if(!err) 
 		{
-			search_from_directory(&file);
+			long parID;
+			
+			err= get_directories_parID(&file, &parID);
+			if(!err)
+			{
+				file.parID= parID;
+				search_from_directory(&file);
+			} else {
+dprintf("Error: %d", err);
+			}
 		}
 	}
 
@@ -1358,8 +1349,11 @@ static void search_from_directory(
 	
 	memset(&pb, 0, sizeof(struct find_file_pb));
 	pb.version= 0;
-//	pb.flags= _ff_recurse;
+#ifdef FINAL
+	pb.flags= _ff_recurse | _ff_callback_with_catinfo;
+#else
 	pb.flags= _ff_callback_with_catinfo;
+#endif
 	pb.search_type= _callback_only;
 	pb.vRefNum= file->vRefNum;
 	pb.directory_id= file->parID;
@@ -1423,6 +1417,7 @@ static void fill_in_popup_with_filetype(
 				set_to_default_physics_file();
 				AppendMenu(menu, getpstr(temporary, strPROMPTS, _default_prompt));
 				value= 1;
+				physics_valid= FALSE;
 				count++;
 				break;
 				

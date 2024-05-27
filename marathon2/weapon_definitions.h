@@ -1,3 +1,5 @@
+
+
 /*
 	WEAPON_DEFINITIONS2.H
 	Saturday, May 13, 1995 8:28:14 PM
@@ -5,6 +7,11 @@
 	Sunday, May 14, 1995 3:11:52 AM- converted the piece of shit...
 
 */
+
+/* TEMPORARY!!! */
+enum {
+	_projectile_ball_dropped= 1000
+};
 
 /* ---------- constants */
 #define NORMAL_WEAPON_DZ (20)
@@ -33,7 +40,10 @@ enum /* weapon flags */
 	_weapon_has_random_ammo_on_pickup= 0x10,
 	_powerup_is_temporary= 0x20,
 	_weapon_reloads_in_one_hand= 0x40,
-	_weapon_fires_out_of_phase= 0x80
+	_weapon_fires_out_of_phase= 0x80,
+	_weapon_fires_under_media= 0x100,
+	_weapon_triggers_share_ammo= 0x200,
+	_weapon_secondary_has_angular_flipping= 0x400
 };
 
 enum {
@@ -56,18 +66,14 @@ enum {
 	_flamethrower_idle,
 	_flamethrower_transit,
 	_flamethrower_firing,
-
-	// ••• SC
 	_assault_rifle_shell_casing,
 	_pistol_shell_casing,
 	_fusion_charged,
-	
-	/* These are wrong */
-	_alien_weapon_idle= _assault_rifle_idle,
-	_alien_weapon_firing= _assault_rifle_firing
+	_alien_weapon_idle,
+	_alien_weapon_firing
 };
 
-/* ---------- shell casings ••• SC */
+/* ---------- shell casings */
 
 enum // shell casing types
 {
@@ -137,6 +143,7 @@ struct trigger_definition {
 	short charging_sound;
 	short shell_casing_sound;
 	short reloading_sound;
+	short charged_sound;
 	short projectile_type;
 	short theta_error;
 	short dx, dz;
@@ -173,7 +180,21 @@ struct weapon_definition {
 	/* load_rounds_tick is the point which you actually load them. */
 	short ready_ticks, await_reload_ticks, loading_ticks, finish_loading_ticks, powerup_ticks;
 
-	struct trigger_definition weapons_by_trigger[2*NUMBER_OF_TRIGGERS];
+	struct trigger_definition weapons_by_trigger[NUMBER_OF_TRIGGERS];
+};
+
+/* ------------------------ globals */
+
+short weapon_ordering_array[]= {
+	_weapon_fist,
+	_weapon_pistol,
+	_weapon_plasma_pistol,
+	_weapon_shotgun,
+	_weapon_assault_rifle,
+	_weapon_flamethrower,
+	_weapon_missile_launcher,
+	_weapon_alien_shotgun,
+	_weapon_ball
 };
 
 #define NUMBER_OF_WEAPONS (sizeof(weapon_definitions)/sizeof(struct weapon_definition))
@@ -182,7 +203,7 @@ struct weapon_definition weapon_definitions[]=
 	/* Fist*/
 	{
 		/* item type, powerup type, item class, item flags */
-		_i_knife, NONE, _melee_class, _no_flags,
+		_i_knife, NONE, _melee_class, _weapon_fires_under_media,
 
 		FIXED_ONE_HALF, 0, /* firing intensity, firing decay */
 
@@ -216,7 +237,7 @@ struct weapon_definition weapon_definitions[]=
 				0,
 				
 				/* firing, click, charging, shell casing sound, reloading sound */
-				NONE, NONE, NONE, NONE, NONE,
+				NONE, NONE, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_fist,
@@ -247,71 +268,7 @@ struct weapon_definition weapon_definitions[]=
 				0,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				NONE, NONE, NONE, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_fist,
-				
-				/* theta error */
-				0,
-				
-				/* dx, dz */
-				0, 0,
-				
-				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
-		
-			/* POWERED UP TRIGGER DEFINITIONS! */
-			{
-				/* rounds per magazine */
-				1, 
-	
-				/* Ammunition type */
-				NONE, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
-				
-				/* recoil magnitude */
-				0,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				NONE, NONE, NONE, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_fist,
-				
-				/* theta error */
-				0,
-				
-				/* dx, dz */
-				0, 0,
-				
-				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
-			{
-				/* rounds per magazine */
-				1, 
-	
-				/* Ammunition type */
-				NONE, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
-				
-				/* recoil magnitude */
-				0,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				NONE, NONE, NONE, NONE, NONE,
+				NONE, NONE, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_fist,
@@ -368,7 +325,7 @@ struct weapon_definition weapon_definitions[]=
 				10,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_magnum_firing, _snd_empty_gun, NONE, NONE, _snd_magnum_reloading,
+				_snd_magnum_firing, _snd_empty_gun, NONE, NONE, _snd_magnum_reloading, NONE,
 				
 				/* projectile type */
 				_projectile_pistol_bullet,
@@ -401,7 +358,7 @@ struct weapon_definition weapon_definitions[]=
 				10,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_magnum_firing, _snd_empty_gun, NONE, NONE, _snd_magnum_reloading,
+				_snd_magnum_firing, _snd_empty_gun, NONE, NONE, _snd_magnum_reloading, NONE,
 				
 				/* projectile type */
 				_projectile_pistol_bullet,
@@ -417,72 +374,6 @@ struct weapon_definition weapon_definitions[]=
 
 				/* burst count */
 				0
-			},
-
-			/* POWERUP UP MAGNUM! */
-			{
-				/* rounds per magazine */
-				8, 
-	
-				/* Ammunition type */
-				_i_magnum_magazine, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
-				
-				/* recoil magnitude */
-				15,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				_snd_magnum_firing, _snd_empty_gun, NONE, NONE, _snd_magnum_reloading,
-				
-				/* projectile type */
-				_projectile_pistol_bullet,
-				
-				/* theta error */
-				1,
-				
-				/* dx, dz */
-				(WORLD_ONE_FOURTH/6), -NORMAL_WEAPON_DZ,		/* Primary */
-				
-				/* shell casing type */
-				_shell_casing_pistol, 
-
-				/* burst count */
-				0
-			},
-			
-			/* left weapon... */
-			{
-				/* rounds per magazine */
-				8, 
-	
-				/* Ammunition type */
-				_i_magnum_magazine, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
-				
-				/* recoil magnitude */
-				15,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				_snd_magnum_firing, _snd_empty_gun, NONE, NONE, _snd_magnum_reloading,
-				
-				/* projectile type */
-				_projectile_pistol_bullet,
-				
-				/* theta error */
-				1,
-				
-				/* dx, dz */
-				-(WORLD_ONE_FOURTH/6), -NORMAL_WEAPON_DZ,		/* Primary */
-				
-				/* shell casing type */
-				_shell_casing_pistol, 
-
-				/* burst count */
-				0
 			}
 		}
 	},
@@ -490,7 +381,7 @@ struct weapon_definition weapon_definitions[]=
 	/* Fusion Pistol */
 	{
 		/* item type, powerup type, item class, item flags */
-		_i_plasma_pistol, NONE, _dual_function_class, _weapon_overloads,
+		_i_plasma_pistol, NONE, _dual_function_class, _weapon_overloads | _weapon_fires_under_media | _weapon_triggers_share_ammo,
 
 		3*FIXED_ONE/4, TICKS_PER_SECOND/3, /* firing intensity, firing decay */
 
@@ -507,7 +398,7 @@ struct weapon_definition weapon_definitions[]=
 		NONE, _fusion_charged,
 
 		/* ready/await/load/finish/powerup rounds ticks */
-		TICKS_PER_SECOND/3, TICKS_PER_SECOND, TICKS_PER_SECOND, TICKS_PER_SECOND, 0,
+		TICKS_PER_SECOND/3, TICKS_PER_SECOND/2, TICKS_PER_SECOND/2, TICKS_PER_SECOND/2, 0,
 
 		{
 			{
@@ -524,7 +415,7 @@ struct weapon_definition weapon_definitions[]=
 				5,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_fusion_firing, _snd_empty_gun, _snd_fusion_charging, NONE, NONE,
+				_snd_fusion_firing, _snd_empty_gun, _snd_fusion_charging, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_fusion_bolt_minor,
@@ -549,77 +440,13 @@ struct weapon_definition weapon_definitions[]=
 				_i_plasma_magazine, 
 				
 				/* Ticks per round, recovery ticks, charging ticks */
-				TICKS_PER_SECOND/5, TICKS_PER_SECOND/5, TICKS_PER_SECOND/2,
+				5, 4, TICKS_PER_SECOND/2,
 				
 				/* recoil magnitude */
 				20,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_fusion_firing, _snd_empty_gun, _snd_fusion_charging, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_fusion_bolt_major,
-				
-				/* theta error */
-				1,
-				
-				/* dx, dz */
-				0, 0,
-				
-				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
-
-			/* POWERED UP FUSION PISTOL */
-			{
-				/* rounds per magazine */
-				20, 
-	
-				/* Ammunition type */
-				_i_plasma_magazine, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/6, 0,
-				
-				/* recoil magnitude */
-				5,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				_snd_fusion_firing, _snd_empty_gun, _snd_fusion_charging, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_fusion_bolt_minor,
-				
-				/* theta error */
-				1,
-				
-				/* dx, dz */
-				0, -4*NORMAL_WEAPON_DZ,
-				
-				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
-			{
-				/* rounds per magazine */
-				20,  // this should not be used...
-	
-				/* Ammunition type */
-				_i_plasma_magazine, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				TICKS_PER_SECOND/3, TICKS_PER_SECOND/6, TICKS_PER_SECOND/2,
-				
-				/* recoil magnitude */
-				20,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				_snd_fusion_firing, _snd_empty_gun, _snd_fusion_charging, NONE, NONE,
+				_snd_major_fusion_firing, _snd_empty_gun, _snd_fusion_charging, NONE, NONE, _snd_major_fusion_charged,
 				
 				/* projectile type */
 				_projectile_fusion_bolt_major,
@@ -642,7 +469,7 @@ struct weapon_definition weapon_definitions[]=
 	/* Assault Rifle */
 	{
 		/* item type, powerup type, item class, item flags */
-		_i_assault_rifle, NONE, _multipurpose_class, _weapon_is_automatic|_weapon_plays_instant_shell_casing_sound,
+		_i_assault_rifle, NONE, _multipurpose_class, _weapon_is_automatic,
 
 		3*FIXED_ONE/4, TICKS_PER_SECOND/5, /* firing intensity, firing decay */
 
@@ -677,7 +504,7 @@ struct weapon_definition weapon_definitions[]=
 				5,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_assault_rifle_firing, _snd_empty_gun, NONE, NONE, _snd_assault_rifle_reloading,
+				_snd_assault_rifle_firing, _snd_empty_gun, NONE, _snd_assault_rifle_shell_casings, _snd_assault_rifle_reloading, NONE,
 				
 				/* projectile type */
 				_projectile_rifle_bullet,
@@ -708,71 +535,7 @@ struct weapon_definition weapon_definitions[]=
 				40,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_grenade_launcher_firing, _snd_empty_gun, NONE, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_grenade,
-				
-				/* theta error */
-				0,
-				
-				/* dx, dz */
-				0, -5*NORMAL_WEAPON_DZ,
-				
-				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
-			
-			/* POWERUP ASSAULT RIFLE */
-			{
-				/* rounds per magazine */
-				52, 
-	
-				/* Ammunition type */
-				_i_assault_rifle_magazine, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, 0, 0,
-				
-				/* recoil magnitude */
-				5,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				_snd_assault_rifle_firing, _snd_empty_gun, NONE, NONE, _snd_assault_rifle_reloading,
-				
-				/* projectile type */
-				_projectile_rifle_bullet,
-				
-				/* theta error */
-				10,
-				
-				/* dx, dz */
-				0, -NORMAL_WEAPON_DZ,
-				
-				/* shell casing type */
-				_shell_casing_assault_rifle,
-
-				/* burst count */
-				0
-			},
-			{
-				/* rounds per magazine */
-				7, 
-	
-				/* Ammunition type */
-				_i_assault_grenade_magazine, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				TICKS_PER_SECOND/6, (3*TICKS_PER_SECOND)/4 - TICKS_PER_SECOND/6, 0,
-				
-				/* recoil magnitude */
-				40,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				_snd_grenade_launcher_firing, _snd_empty_gun, NONE, NONE, NONE,
+				_snd_grenade_launcher_firing, _snd_empty_gun, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_grenade,
@@ -829,7 +592,7 @@ struct weapon_definition weapon_definitions[]=
 				100,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_rocket_firing, _snd_empty_gun, NONE, NONE, NONE,
+				_snd_rocket_firing, _snd_empty_gun, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_rocket,
@@ -839,38 +602,6 @@ struct weapon_definition weapon_definitions[]=
 				
 				/* dx, dz */
 				-WORLD_ONE_FOURTH, 0,
-				
-				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
-			/* unused */
-			{
-				/* rounds per magazine */
-				1, 
-	
-				/* Ammunition type */
-				NONE, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
-				
-				/* recoil magnitude */
-				0,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				NONE, NONE, NONE, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_fist,
-				
-				/* theta error */
-				0,
-				
-				/* dx, dz */
-				0, 0,
 				
 				/* shell casing type */
 				NONE, 
@@ -879,38 +610,6 @@ struct weapon_definition weapon_definitions[]=
 				0
 			},
 			
-			/* POWERUP ROCKET LAUNCHER */
-			{
-				/* rounds per magazine */
-				2, 
-	
-				/* Ammunition type */
-				_i_missile_launcher_magazine, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				TICKS_PER_SECOND/2, TICKS_PER_SECOND/10, 0,
-				
-				/* recoil magnitude */
-				120,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				_snd_rocket_firing, _snd_empty_gun, NONE, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_rocket,
-				
-				/* theta error */
-				0,
-				
-				/* dx, dz */
-				-WORLD_ONE_FOURTH, 0,
-				
-				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
 			/* unused */
 			{
 				/* rounds per magazine */
@@ -926,7 +625,7 @@ struct weapon_definition weapon_definitions[]=
 				0,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				NONE, NONE, NONE, NONE, NONE,
+				NONE, NONE, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_fist,
@@ -949,7 +648,7 @@ struct weapon_definition weapon_definitions[]=
 	/* flamethrower */
 	{
 		/* item type, powerup type, item class, item flags */
-		_i_flamethrower, NONE, _normal_class, 0,
+		_i_flamethrower, NONE, _normal_class, _weapon_is_automatic,
 
 		3*FIXED_ONE/4, TICKS_PER_SECOND/3, /* firing intensity, firing decay */
 
@@ -983,7 +682,7 @@ struct weapon_definition weapon_definitions[]=
 				2,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_flamethrower, NONE, NONE, NONE, NONE,
+				_snd_flamethrower, NONE, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_flamethrower_burst,
@@ -1016,73 +715,7 @@ struct weapon_definition weapon_definitions[]=
 				0,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				NONE, NONE, NONE, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_fist,
-				
-				/* theta error */
-				0,
-				
-				/* dx, dz */
-				0, 0,
-				
-				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
-			
-			/* POWERUP FLAMETHROWER */
-			{
-				/* rounds per magazine */
-				7*TICKS_PER_SECOND, 
-	
-				/* Ammunition type */
-				_i_flamethrower_canister, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
-				
-				/* recoil magnitude */
-				2,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				_snd_flamethrower, NONE, NONE, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_flamethrower_burst,
-				
-				/* theta error */
-				0,
-				
-				/* dx, dz */
-				20, -50,
-				
-				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
-			
-			/* unused */
-			{
-				/* rounds per magazine */
-				1, 
-	
-				/* Ammunition type */
-				NONE, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
-				
-				/* recoil magnitude */
-				0,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				NONE, NONE, NONE, NONE, NONE,
+				NONE, NONE, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_fist,
@@ -1105,16 +738,16 @@ struct weapon_definition weapon_definitions[]=
 	/* alien weapon */
 	{
 		/* item type, powerup type, item class, item flags */
-		_i_alien_shotgun, NONE, _normal_class, _weapon_is_automatic|_weapon_disappears_after_use|_weapon_has_random_ammo_on_pickup,
+		_i_alien_shotgun, NONE, _multipurpose_class, _weapon_is_automatic | _weapon_disappears_after_use | _weapon_has_random_ammo_on_pickup | _weapon_triggers_share_ammo | _weapon_secondary_has_angular_flipping,
 
-		3*FIXED_ONE/4, TICKS_PER_SECOND/7, /* firing intensity, firing decay */
+		3*FIXED_ONE/4, TICKS_PER_SECOND/5, /* firing intensity, firing decay */
 
 		/* idle height, bob amplitude, kick height, reload height */
-		FIXED_ONE+FIXED_ONE/25, FIXED_ONE/35, FIXED_ONE/16, 0,
-		
-		/* horizontal positioning.. */
-		FIXED_ONE_HALF/2, 0,
+		FIXED_ONE+FIXED_ONE/6, FIXED_ONE/35, FIXED_ONE/16, 3*FIXED_ONE/4,
 
+		/* horizontal positioning.. */
+		FIXED_ONE_HALF, 0,
+		
 		/* collection, idle, firing, reloading shapes; shell casing, charging, charged */
 		_weapon_in_hand_collection,
 		_alien_weapon_idle, _alien_weapon_firing, NONE,
@@ -1122,136 +755,68 @@ struct weapon_definition weapon_definitions[]=
 		NONE, NONE,
 
 		/* ready/await/load/finish/powerup rounds ticks */
-		TICKS_PER_SECOND/2, (2*TICKS_PER_SECOND)/3, (2*TICKS_PER_SECOND)/3, (2*TICKS_PER_SECOND)/3, 0,
+		TICKS_PER_SECOND/2, TICKS_PER_SECOND/3, TICKS_PER_SECOND/3, TICKS_PER_SECOND/3, 0,
 
 		{
 			{
 				/* rounds per magazine */
-				150, 
+				2000, 
 	
 				/* Ammunition type */
 				_i_alien_shotgun_magazine, 
 				
 				/* Ticks per round, recovery ticks, charging ticks */
-//				NONE, TICKS_PER_SECOND/3, 0,
-				5, TICKS_PER_SECOND/3, 0,
+				NONE, 0, 0,
 				
 				/* recoil magnitude */
 				5,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_magnum_firing, _snd_empty_gun, NONE, NONE, NONE,
+				_snd_enforcer_attack, NONE, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_alien_weapon,
 				
 				/* theta error */
-				8,
+				1,
 				
 				/* dx, dz */
-				0, -NORMAL_WEAPON_DZ,
+				0, -8*NORMAL_WEAPON_DZ,
 				
 				/* shell casing type */
-				NONE, 
+				NONE,
 
 				/* burst count */
 				0
 			},
-			
-			/* unused... */
-			{
-				/* rounds per magazine */
-				1, 
-	
-				/* Ammunition type */
-				NONE, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
-				
-				/* recoil magnitude */
-				0,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				NONE, NONE, NONE, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_fist,
-				
-				/* theta error */
-				0,
-				
-				/* dx, dz */
-				0, 0,
-				
-				/* shell casing type */
-				NONE, 
 
-				/* burst count */
-				0
-			},
-			
-			/* POWERUP ALIEN WEAPON */
 			{
 				/* rounds per magazine */
-				150, 
+				50, 
 	
 				/* Ammunition type */
 				_i_alien_shotgun_magazine, 
 				
 				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
+				NONE, 0, 0,
 				
 				/* recoil magnitude */
 				5,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_magnum_firing, _snd_empty_gun, NONE, NONE, NONE,
+				_snd_enforcer_attack, NONE, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
 				_projectile_alien_weapon,
 				
 				/* theta error */
-				8,
+				1,
 				
 				/* dx, dz */
-				0, -NORMAL_WEAPON_DZ,
+				0, -8*NORMAL_WEAPON_DZ,
 				
 				/* shell casing type */
-				NONE, 
-
-				/* burst count */
-				0
-			},
-			
-			/* unused... */
-			{
-				/* rounds per magazine */
-				1, 
-	
-				/* Ammunition type */
-				NONE, 
-				
-				/* Ticks per round, recovery ticks, charging ticks */
-				NONE, TICKS_PER_SECOND/3, 0,
-				
-				/* recoil magnitude */
-				0,
-				
-				/* firing, click, charging, shell casing, reload sound */
-				NONE, NONE, NONE, NONE, NONE,
-				
-				/* projectile type */
-				_projectile_fist,
-				
-				/* theta error */
-				0,
-				
-				/* dx, dz */
-				0, 0,
-				
-				/* shell casing type */
-				NONE, 
+				NONE,
 
 				/* burst count */
 				0
@@ -1295,13 +860,13 @@ struct weapon_definition weapon_definitions[]=
 				NONE, TICKS_PER_SECOND/3, 0,
 				
 				/* recoil magnitude */
-				0,
+				25,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_shotgun_firing, _snd_empty_gun, NONE, NONE, _snd_shotgun_reloading,
+				_snd_shotgun_firing, _snd_empty_gun, NONE, NONE, _snd_shotgun_reloading, NONE,
 				
 				/* projectile type */
-				_projectile_pistol_bullet,
+				_projectile_shotgun_bullet,
 				
 				/* theta error */
 				SHOTGUN_SPREAD,
@@ -1328,13 +893,13 @@ struct weapon_definition weapon_definitions[]=
 				NONE, TICKS_PER_SECOND/3, 0,
 				
 				/* recoil magnitude */
-				0,
+				25,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_shotgun_firing, _snd_empty_gun, NONE, NONE, _snd_shotgun_reloading,
+				_snd_shotgun_firing, _snd_empty_gun, NONE, NONE, _snd_shotgun_reloading, NONE,
 				
 				/* projectile type */
-				_projectile_pistol_bullet,
+				_projectile_shotgun_bullet,
 				
 				/* theta error */
 				SHOTGUN_SPREAD,
@@ -1347,15 +912,39 @@ struct weapon_definition weapon_definitions[]=
 
 				/* burst count */
 				SHOTGUN_BURST_COUNT
-			},
+			}
+		}
+	},
+	
+	/* The Ball- Don't Drop It. */
+	{
+		/* item type, powerup type, item class, item flags */
+		_i_red_ball, NONE, _normal_class, 0,
 
-			/* POWERUP UP SHOTGUN! */
+		0, 0, /* firing intensity, firing decay */
+
+		/* idle height, bob amplitude, kick height, reload height */
+		FIXED_ONE+FIXED_ONE/15, FIXED_ONE/15, FIXED_ONE/16, 0,
+		
+		/* horizontal positioning.. */
+		FIXED_ONE_HALF, 0,
+
+		/* collection, idle, firing, reloading shapes; shell casing, charging, charged */
+		_collection_player,
+		30, 30, 30,
+		NONE,
+		NONE, NONE,
+
+		/* ready/await/load/finish/powerup rounds ticks */
+		TICKS_PER_SECOND/4, 0, 0, 0, 0,
+
+		{
 			{
 				/* rounds per magazine */
-				SHOTGUN_BURST_COUNT, 
+				1, 
 	
 				/* Ammunition type */
-				_i_shotgun_magazine, 
+				NONE, 
 				
 				/* Ticks per round, recovery ticks, charging ticks */
 				NONE, TICKS_PER_SECOND/3, 0,
@@ -1364,31 +953,30 @@ struct weapon_definition weapon_definitions[]=
 				0,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_shotgun_firing, _snd_empty_gun, NONE, NONE, _snd_shotgun_reloading,
+				NONE, NONE, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
-				_projectile_pistol_bullet,
+				_projectile_ball_dropped,
 				
 				/* theta error */
-				SHOTGUN_SPREAD,
+				0,
 				
 				/* dx, dz */
-				(WORLD_ONE_FOURTH/6), -NORMAL_WEAPON_DZ,		/* Primary */
-				
+				0, -150,		/* Primary */
+
 				/* shell casing type */
 				NONE, 
-
+				
 				/* burst count */
-				SHOTGUN_BURST_COUNT
+				0
 			},
 			
-			/* left weapon... */
 			{
 				/* rounds per magazine */
-				SHOTGUN_BURST_COUNT, 
+				1, 
 	
 				/* Ammunition type */
-				_i_shotgun_magazine, 
+				NONE, 
 				
 				/* Ticks per round, recovery ticks, charging ticks */
 				NONE, TICKS_PER_SECOND/3, 0,
@@ -1397,22 +985,22 @@ struct weapon_definition weapon_definitions[]=
 				0,
 				
 				/* firing, click, charging, shell casing, reload sound */
-				_snd_shotgun_firing, _snd_empty_gun, NONE, NONE, _snd_shotgun_reloading,
+				NONE, NONE, NONE, NONE, NONE, NONE,
 				
 				/* projectile type */
-				_projectile_pistol_bullet,
+				_projectile_ball_dropped,
 				
 				/* theta error */
-				SHOTGUN_SPREAD,
+				0,
 				
 				/* dx, dz */
-				(WORLD_ONE_FOURTH/6), -NORMAL_WEAPON_DZ,		/* Primary */
-				
+				0, 0,		/* Primary */
+
 				/* shell casing type */
 				NONE, 
-
+				
 				/* burst count */
-				SHOTGUN_BURST_COUNT
+				0
 			}
 		}
 	}

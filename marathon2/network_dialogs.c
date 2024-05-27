@@ -16,7 +16,8 @@ Tuesday, September 6, 1994 3:50:01 PM (ajr)
 // _overhead_map_is_omniscient is now _burn_items_on_death
 
 #include "macintosh_cseries.h"
-#include "macintosh_network.h"
+#include "macintosh_network.h" // solely for ADSP.h, AppleTalk.h, and network_lookup functions.
+
 #include "shell.h"  // for preferences
 #include "map.h"    // so i can include player.h
 #include "player.h" // for displaying damage statistics after network game.
@@ -24,7 +25,9 @@ Tuesday, September 6, 1994 3:50:01 PM (ajr)
 #include <string.h>
 #include "interface.h" // for _multiplayer_carnage_entry_point
 #include "screen_drawing.h"
+
 #include "network_games.h"
+#include "network_stream.h"
 
 //#define TEST_NET_STATS_DIALOG  // for testing the dialog when i don't want to play a net game
 
@@ -36,6 +39,8 @@ Tuesday, September 6, 1994 3:50:01 PM (ajr)
 #pragma segment network_dialogs
 #endif
 
+// #define USE_MODEM
+
 struct network_speeds
 {
 	short updates_per_packet;
@@ -46,6 +51,11 @@ struct network_speeds
 
 #define PLAYER_TYPE "\pMarathon2 Player"
 #define MONSTER_TEAM                8
+
+// This number needs to be changed whenever a change occurs in the networking code
+// that would make 2 versions incompatible, or a change in the game occurs that
+// would make 2 versions out of sync.
+#define MARATHON_NETWORK_VERSION 9
 
 #define fontTOP_LEVEL_FONT        130
 #define menuZONES                1002
@@ -68,12 +78,14 @@ enum {
 	pointsString
 };
 
-#define dlogGATHER             10000
-	#define iPLAYER_DISPLAY_AREA   3
-	#define iADD                   4
-	#define iNETWORK_LIST_BOX      5
-	#define iZONES_MENU            8
-	#define iPLAYER_LIST_TEXT      9
+enum {
+	dlogGATHER= 10000,
+	iPLAYER_DISPLAY_AREA= 3,
+	iADD,
+	iNETWORK_LIST_BOX,
+	iZONES_MENU= 8,
+	iPLAYER_LIST_TEXT
+};
 
 enum {
 	dlogJOIN= 10001,
@@ -82,7 +94,8 @@ enum {
 	iJOIN_NAME= 4,
 	iJOIN_TEAM,
 	iJOIN_COLOR, 
-	iJOIN_MESSAGES
+	iJOIN_MESSAGES,
+	iJOIN_NETWORK_TYPE= 13
 };
 
 enum {
@@ -116,6 +129,8 @@ enum {
 
 #define BOX_SPACING  8
 
+#define OPTION_KEYCODE             0x3a
+
 /* ---------- globals */
 
 static accepted_into_game;
@@ -127,7 +142,8 @@ static struct network_speeds net_speeds[] =
 	{3, 2},  // Appletalk Remote
 	{2, 1},  // LocalTalk
 	{1, 0},  // TokenTalk
-	{1, 0}   // Ethernet
+	{1, 0},  // Ethernet
+	{2, 1}	 // Modem stats
 };
 
 /* from screen_drawing.c */
@@ -135,8 +151,9 @@ extern TextSpec *_get_font_spec(short font_index);
 
 /* ---------- private code */
 static boolean network_game_setup(player_info *player_information, game_info *game_information);
-static short fill_in_game_setup_dialog(DialogPtr dialog, player_info *player_information);
-static void extract_setup_dialog_information(DialogPtr dialog, player_info *player_information, game_info *game_information, short game_limit_type);
+static short fill_in_game_setup_dialog(DialogPtr dialog, player_info *player_information, boolean allow_all_levels);
+static void extract_setup_dialog_information(DialogPtr dialog, player_info *player_information, 
+	game_info *game_information, short game_limit_type, boolean allow_all_levels);
 static void set_dialog_game_options(DialogPtr dialog, long game_options);
 static long get_dialog_game_options(DialogPtr dialog, short game_type);
 boolean check_setup_information(DialogPtr dialog, short game_limit_type);
@@ -158,11 +175,19 @@ static void reassign_player_colors(short player_index, short num_players);
 static void draw_beveled_text_box(boolean inset, Rect *box, short bevel_size, RGBColor *brightest_color, char *text,short flags, boolean name_box);
 
 static void menu_index_to_level_entry(short index, long entry_flags, struct entry_point *entry);
-static void fill_in_entry_points(DialogPtr dialog, short item, long entry_flags);
+static void fill_in_entry_points(DialogPtr dialog, short item, long entry_flags, short default_level);
 
 static MenuHandle get_popup_menu_handle(DialogPtr dialog, short item);
 static void setup_dialog_for_game_type(DialogPtr dialog, short game_type);
 static void draw_player_box_with_team(Rect *rectangle, short player_index);
+
+static void setup_network_speed_for_join(DialogPtr dialog);
+static void setup_network_speed_for_gather(DialogPtr dialog);
+static void setup_for_untimed_game(DialogPtr dialog);
+static void setup_for_timed_game(DialogPtr dialog);
+static short get_game_duration_radio(DialogPtr dialog);
+
+static boolean key_is_down(short key_code);
 
 /* ---------- code */
 
@@ -183,13 +208,10 @@ boolean network_gather(
 
 	if (network_game_setup(&myPlayerInfo, &myGameInfo))
 	{
-		OSErr error;
-
 		myPlayerInfo.desired_color= myPlayerInfo.color;
 		memcpy(myPlayerInfo.long_serial_number, serial_preferences->long_serial_number, 10);
 	
-		error= NetEnter();
-		if(!error)
+		if(NetEnter())
 		{
 			DialogPtr dialog;
 			MenuHandle zones_menu;
@@ -198,6 +220,9 @@ boolean network_gather(
 			boolean internet= FALSE;
 			ModalFilterUPP gather_dialog_upp;
 			short current_zone_index, item_type;
+			OSErr error;
+			Cell cell;
+			short item_hit;
 
 			zones_menu= GetMHandle(menuZONES);
 			if (!zones_menu)
@@ -224,14 +249,10 @@ boolean network_gather(
 			HideDItem(dialog, internet ? iPLAYER_LIST_TEXT : iZONES_MENU);
 			
 			ShowWindow(dialog);
-		
-			error= NetGather(&myGameInfo, sizeof(game_info), (void*) &myPlayerInfo, 
-				sizeof(myPlayerInfo), MARATHON_VERSION);
-			if(!error)
+					
+			if(NetGather(&myGameInfo, sizeof(game_info), (void*) &myPlayerInfo, 
+				sizeof(myPlayerInfo)))
 			{
-				Cell cell;
-				short item_hit;
-				
 				do
 				{
 					short number_of_players= NetGetNumberOfPlayers();
@@ -249,17 +270,7 @@ boolean network_gather(
 							SetPt(&cell, 0, 0);
 							if (LGetSelect(TRUE, &cell, network_list_box)) /* if no selection, we goofed */
 							{
-								error= NetGatherPlayer(cell.v, (ProcPtr) reassign_player_colors);
-								if (error > 0)
-								{
-									alert_user(infoError, strNETWORK_ERRORS, netErrIncompatibleVerions, 0);
-								}
-								else if (error != noErr)
-								{
-									alert_user(infoError, strNETWORK_ERRORS, netErrCantAddPlayer, error);
-									NetLookupRemove(cell.v); /* get this guy out of here, he didn’t respond */
-								}
-								else
+								if (NetGatherPlayer(cell.v, reassign_player_colors))
 								{
 									update_player_list_item(dialog, iPLAYER_DISPLAY_AREA);
 								}
@@ -277,37 +288,27 @@ boolean network_gather(
 							break;
 					}
 				} while(item_hit!=iCANCEL && item_hit!=iOK);
-
-				dispose_network_list_box();
-			
-				DisposeRoutineDescriptor(gather_dialog_upp);
-				DisposeDialog(dialog);
-			
-				if (item_hit==iOK)
-				{
-					error= NetStart();
-					if(error)
-					{
-						alert_user(infoError, strNETWORK_ERRORS, netErrCouldntDistribute, error);
-					} else {
-						successful= TRUE;
-					}
-				}
-				else
-				{
-					error= NetCancelGather();
-//					if (error!=noErr) dprintf("NetCancelGather() returned %d", error);
-					
-					error= NetExit();
-//					if (error!=noErr) dprintf("NetExit() returned %d", error);
-				}
 			} else {
-				alert_user(infoError, strNETWORK_ERRORS, netErrCantContinue, error);
+				/* Failed on NetGather */
+				item_hit==iCANCEL;
+			}
+
+			dispose_network_list_box();
+		
+			DisposeRoutineDescriptor(gather_dialog_upp);
+			DisposeDialog(dialog);
+		
+			if (item_hit==iOK)
+			{
+				successful= NetStart();
+			}
+			else
+			{
+				NetCancelGather();
 				NetExit();
 			}
-		} else  {
-			alert_user(infoError, strNETWORK_ERRORS, netErrCantContinue, error);
-			NetExit();
+		} else {
+			/* error correction handled in the network code now.. */
 		}
 	}
 
@@ -323,142 +324,151 @@ boolean network_gather(
 boolean network_join(
 	void)
 {
-	OSErr           error;
-	short           item_hit;
-	GrafPtr         old_port;
-	boolean         successful = FALSE, did_join = FALSE;
-	DialogPtr       dialog;
-	player_info     myPlayerInfo;
-	game_info       *myGameInfo;
-	ModalFilterUPP  join_dialog_upp;
-	
-	Rect   item_rect;
-	short   item_type;
-	Handle  item_handle;
+	boolean successful= FALSE;
 
-	error= NetEnter();
-	if (error!=noErr) 
+	/* If we can enter the network... */
+	if(NetEnter())
 	{
-		alert_user(infoError, strNETWORK_ERRORS, netErrCantContinue, error);
-		NetExit();
-		return FALSE;
-	}
-	
-	GetPort(&old_port);
-
-	dialog= myGetNewDialog(dlogJOIN, NULL, (WindowPtr) -1, refNETWORK_JOIN_DIALOG);
-	assert(dialog);
-	join_dialog_upp = NewModalFilterProc(join_dialog_filter_proc);
-	assert(join_dialog_upp);
-
-	SetPort(dialog);
-	{
-		short name_length= player_preferences->name[0];
+		short item_hit, item_type;
+#ifdef USE_MODEM
+		short transport_type;
+#endif
+		GrafPtr old_port;
+		boolean did_join = FALSE;
+		DialogPtr dialog;
+		player_info myPlayerInfo;
+		game_info *myGameInfo;
+		ModalFilterUPP join_dialog_upp;
+		Rect item_rect;
+		Handle item_handle;
+		short name_length;
 		
+		dialog= myGetNewDialog(dlogJOIN, NULL, (WindowPtr) -1, refNETWORK_JOIN_DIALOG);
+		assert(dialog);
+		join_dialog_upp = NewModalFilterProc(join_dialog_filter_proc);
+		assert(join_dialog_upp);
+	
+		name_length= player_preferences->name[0];
 		if(name_length>MAX_NET_PLAYER_NAME_LENGTH) name_length= MAX_NET_PLAYER_NAME_LENGTH;
 		memcpy(myPlayerInfo.name, player_preferences->name, name_length+1);
-	}
 
-	GetDItem(dialog, iJOIN_NAME, &item_type, &item_handle, &item_rect);
-	SetIText(item_handle, myPlayerInfo.name);
-	SelIText(dialog, iJOIN_NAME, 0, SHORT_MAX);
-	modify_control(dialog, iJOIN_TEAM, CONTROL_ACTIVE, player_preferences->team+1);
-	modify_control(dialog, iJOIN_COLOR, CONTROL_ACTIVE, player_preferences->color+1);
-	if (myPlayerInfo.name[0] == 0) modify_control(dialog, iOK, CONTROL_INACTIVE, NONE);
+		GetDItem(dialog, iJOIN_NAME, &item_type, &item_handle, &item_rect);
+		SetIText(item_handle, myPlayerInfo.name);
+		SelIText(dialog, iJOIN_NAME, 0, SHORT_MAX);
+		modify_control(dialog, iJOIN_TEAM, CONTROL_ACTIVE, player_preferences->team+1);
+		modify_control(dialog, iJOIN_COLOR, CONTROL_ACTIVE, player_preferences->color+1);
+		if (myPlayerInfo.name[0] == 0) modify_control(dialog, iOK, CONTROL_INACTIVE, NONE);
+	
+		GetDItem(dialog, iJOIN_MESSAGES, &item_type, &item_handle, &item_rect);
+		SetIText(item_handle, getpstr(temporary, strJOIN_DIALOG_MESSAGES, _join_dialog_welcome_string));
 
-	GetDItem(dialog, iJOIN_MESSAGES, &item_type, &item_handle, &item_rect);
-	SetIText(item_handle, getpstr(temporary, strJOIN_DIALOG_MESSAGES, _join_dialog_welcome_string));
+#ifdef USE_MODEM	
+		/* Adjust the transport layer using what's available */
+		setup_network_speed_for_join(dialog);
+#endif
+	
+		accepted_into_game = FALSE;
 
-	accepted_into_game = FALSE;
-
-	ShowWindow(dialog);
-
-	do
-	{
-		ModalDialog(join_dialog_upp, &item_hit);
-		switch(item_hit)
+		GetPort(&old_port);
+		SetPort(dialog);
+		ShowWindow(dialog);
+	
+		do
 		{
-			case iJOIN:
-				SetPort(dialog);
-				GetDItem(dialog, iJOIN_NAME, &item_type, &item_handle, &item_rect);
-				GetIText(item_handle, temporary);
-				if (*temporary > MAX_NET_PLAYER_NAME_LENGTH) *temporary = MAX_NET_PLAYER_NAME_LENGTH;
-				pstrcpy(myPlayerInfo.name, temporary);
-				GetDItem(dialog, iJOIN_TEAM, &item_type, &item_handle, &item_rect);
-				myPlayerInfo.team= GetCtlValue((ControlHandle) item_handle) - 1;
-				GetDItem(dialog, iJOIN_COLOR, &item_type, &item_handle, &item_rect);
-				myPlayerInfo.color= GetCtlValue((ControlHandle) item_handle) - 1;
-				myPlayerInfo.desired_color= myPlayerInfo.color;
-				memcpy(myPlayerInfo.long_serial_number, serial_preferences->long_serial_number, 10);
-			
-				SetCursor(*GetCursor(watchCursor));
-				error = NetGameJoin(myPlayerInfo.name, PLAYER_TYPE, (void *) &myPlayerInfo, sizeof(myPlayerInfo), MARATHON_VERSION);
-				SetCursor(&qd.arrow);
-				if (error != noErr)
-					alert_user(infoError, strNETWORK_ERRORS, netErrCouldntJoin, error);
-				else  // make most of dialog inactive
-				{
-					SelIText(dialog, iJOIN_NAME, 0, 0);
+			ModalDialog(join_dialog_upp, &item_hit);
+			switch(item_hit)
+			{
+				case iJOIN:
+					SetPort(dialog);
 					GetDItem(dialog, iJOIN_NAME, &item_type, &item_handle, &item_rect);
-					SetDItem(dialog, iJOIN_NAME, statText, item_handle, &item_rect);
-					((DialogPeek)(dialog))->editField = -1;
-					InsetRect(&item_rect, -4, -4); EraseRect(&item_rect); InvalRect(&item_rect); // force it to be updated
-					modify_control(dialog, iJOIN_TEAM, CONTROL_INACTIVE, NONE);
-					modify_control(dialog, iJOIN_COLOR, CONTROL_INACTIVE, NONE);
-					modify_control(dialog, iJOIN, CONTROL_INACTIVE, NONE);
-					did_join = TRUE;
-
-					// update preferences for user (Eat Gaseous Worms!)
-					pstrcpy(player_preferences->name, myPlayerInfo.name);
-					player_preferences->team = myPlayerInfo.team;
-					player_preferences->color = myPlayerInfo.color;
-					write_preferences();
-
-					GetDItem(dialog, iJOIN_MESSAGES, &item_type, &item_handle, &item_rect);
-					SetIText(item_handle, getpstr(temporary, strJOIN_DIALOG_MESSAGES, _join_dialog_waiting_string));
-				}
-				break;
+					GetIText(item_handle, temporary);
+					if (*temporary > MAX_NET_PLAYER_NAME_LENGTH) *temporary = MAX_NET_PLAYER_NAME_LENGTH;
+					pstrcpy(myPlayerInfo.name, temporary);
+					GetDItem(dialog, iJOIN_TEAM, &item_type, &item_handle, &item_rect);
+					myPlayerInfo.team= GetCtlValue((ControlHandle) item_handle) - 1;
+					GetDItem(dialog, iJOIN_COLOR, &item_type, &item_handle, &item_rect);
+					myPlayerInfo.color= GetCtlValue((ControlHandle) item_handle) - 1;
+					myPlayerInfo.desired_color= myPlayerInfo.color;
+					memcpy(myPlayerInfo.long_serial_number, serial_preferences->long_serial_number, 10);
 				
-			case iCANCEL:
-				break;
-				
-			case iJOIN_TEAM:
-				break;
-				
-			default:
-				break;
+					SetCursor(*GetCursor(watchCursor));
+					did_join= NetGameJoin(myPlayerInfo.name, PLAYER_TYPE, (void *) &myPlayerInfo, sizeof(myPlayerInfo), 
+						MARATHON_NETWORK_VERSION);
+					
+					SetCursor(&qd.arrow);
+					if(did_join)
+					{
+						SelIText(dialog, iJOIN_NAME, 0, 0);
+						GetDItem(dialog, iJOIN_NAME, &item_type, &item_handle, &item_rect);
+						SetDItem(dialog, iJOIN_NAME, statText, item_handle, &item_rect);
+						((DialogPeek)(dialog))->editField = -1;
+						InsetRect(&item_rect, -4, -4); EraseRect(&item_rect); InvalRect(&item_rect); // force it to be updated
+						modify_control(dialog, iJOIN_TEAM, CONTROL_INACTIVE, NONE);
+						modify_control(dialog, iJOIN_COLOR, CONTROL_INACTIVE, NONE);
+						modify_control(dialog, iJOIN, CONTROL_INACTIVE, NONE);
+#ifdef USE_MODEM
+						modify_control(dialog, iJOIN_NETWORK_TYPE, CONTROL_INACTIVE, NONE);
+#endif
+	
+						// update preferences for user (Eat Gaseous Worms!)
+						pstrcpy(player_preferences->name, myPlayerInfo.name);
+						player_preferences->team = myPlayerInfo.team;
+						player_preferences->color = myPlayerInfo.color;
+						write_preferences();
+	
+						GetDItem(dialog, iJOIN_MESSAGES, &item_type, &item_handle, &item_rect);
+						SetIText(item_handle, getpstr(temporary, strJOIN_DIALOG_MESSAGES, _join_dialog_waiting_string));
+					} else {
+						/* If you fail in joining the game, print the error and return */
+						/*  to the main menu (this is primarily for modem) */
+						item_hit= iCANCEL;
+					}
+					break;
+					
+				case iCANCEL:
+					break;
+					
+				case iJOIN_TEAM:
+					break;
+	
+				case iJOIN_NETWORK_TYPE:
+#ifdef USE_MODEM
+					GetDItem(dialog, iJOIN_NETWORK_TYPE, &item_type, &item_handle, &item_rect);
+					transport_type= GetCtlValue((ControlHandle) item_handle);
+					NetSetTransportType(transport_type-1);
+#endif
+					break;
+					
+				default:
+					break;
+			}
 		}
-	}
-	while (!accepted_into_game && item_hit != iCANCEL);
-
-	SetPort(old_port);
-
-	DisposeRoutineDescriptor(join_dialog_upp);
-	DisposeDialog(dialog);
-
-	if (accepted_into_game)
-	{
-		successful = TRUE;
-		myGameInfo = NetGetGameData();
-		NetSetInitialParameters(myGameInfo->initial_updates_per_packet, myGameInfo->initial_update_latency);
-	}
-	else
-	{
-		if (did_join)
+		while (!accepted_into_game && item_hit != iCANCEL);
+	
+		SetPort(old_port);
+	
+		DisposeRoutineDescriptor(join_dialog_upp);
+		DisposeDialog(dialog);
+	
+		if (accepted_into_game)
 		{
-			error = NetCancelJoin();
-//			if (error != noErr)
-//				dprintf("NetCancelJoin() returned %d", error);
+			successful= TRUE;
+			myGameInfo= NetGetGameData();
+			NetSetInitialParameters(myGameInfo->initial_updates_per_packet, myGameInfo->initial_update_latency);
 		}
-		
-		error= NetExit();
-//		if (error != noErr) 
-//			dprintf("NetExit() returned %d", error);
+		else
+		{
+			if (did_join)
+			{
+				NetCancelJoin();
+			}
+			
+			NetExit();
+		}
 	}
 	
 	return successful;
 }
-
 
 /* ---------- private code */
 
@@ -472,11 +482,12 @@ boolean network_game_setup(
 	player_info *player_information,
 	game_info *game_information)
 {
-	short game_limit_type, item_hit;
+	short item_hit;
 	GrafPtr old_port;
 	boolean successful = FALSE, information_is_acceptable;
 	DialogPtr dialog;
 	ModalFilterUPP game_setup_filter_upp;
+	boolean allow_all_levels= key_is_down(OPTION_KEYCODE);
 
 	dialog= myGetNewDialog(dlogGAME_SETUP, NULL, (WindowPtr) -1, refNETWORK_SETUP_DIALOG);
 	assert(dialog);
@@ -485,7 +496,7 @@ boolean network_game_setup(
 	GetPort(&old_port);
 	SetPort(dialog);
 
-	game_limit_type= fill_in_game_setup_dialog(dialog, player_information);
+	game_information->net_game_type= fill_in_game_setup_dialog(dialog, player_information, allow_all_levels);
 
 	ShowWindow(dialog);
 
@@ -500,26 +511,30 @@ boolean network_game_setup(
 			switch (item_hit)
 			{
 				case iRADIO_NO_TIME_LIMIT:
-					HideDItem(dialog, iTEXT_KILL_LIMIT); HideDItem(dialog, iTEXT_TIME_LIMIT);
-					HideDItem(dialog, iTIME_LIMIT); HideDItem(dialog, iKILL_LIMIT);
-					modify_radio_button_family(dialog, iRADIO_NO_TIME_LIMIT, iRADIO_KILL_LIMIT, iRADIO_NO_TIME_LIMIT);
-					game_limit_type = iRADIO_NO_TIME_LIMIT;
+					setup_for_untimed_game(dialog);
 					break;
+					
 				case iRADIO_TIME_LIMIT:
-					HideDItem(dialog, iTEXT_KILL_LIMIT); HideDItem(dialog, iKILL_LIMIT);
-					ShowDItem(dialog, iTIME_LIMIT); ShowDItem(dialog, iTEXT_TIME_LIMIT);
-					modify_radio_button_family(dialog, iRADIO_NO_TIME_LIMIT, iRADIO_KILL_LIMIT, iRADIO_TIME_LIMIT);
-					game_limit_type = iRADIO_TIME_LIMIT;
+					setup_for_timed_game(dialog);
 					break;
+					
 				case iRADIO_KILL_LIMIT:
 					HideDItem(dialog, iTIME_LIMIT); HideDItem(dialog, iTEXT_TIME_LIMIT);
 					ShowDItem(dialog, iTEXT_KILL_LIMIT); ShowDItem(dialog, iKILL_LIMIT);
 					modify_radio_button_family(dialog, iRADIO_NO_TIME_LIMIT, iRADIO_KILL_LIMIT, iRADIO_KILL_LIMIT);
-					game_limit_type = iRADIO_KILL_LIMIT;
+					break;
+
+				case iFORCE_UNIQUE_TEAMS:
+					modify_control(dialog, item_hit, NONE, !get_dialog_control_value(dialog, item_hit));
+					if(!get_dialog_control_value(dialog, item_hit))
+					{
+						modify_control(dialog, iGATHER_TEAM, CONTROL_INACTIVE, NONE);
+					} else {
+						modify_control(dialog, iGATHER_TEAM, CONTROL_ACTIVE, NONE);
+					}
 					break;
 
 				case iUNLIMITED_MONSTERS:
-				case iFORCE_UNIQUE_TEAMS:
 				case iMOTION_SENSOR_DISABLED:
 				case iDYING_PUNISHED:
 				case iSUICIDE_PUNISHED:
@@ -536,14 +551,22 @@ boolean network_game_setup(
 						
 						if(new_game_type != game_information->net_game_type)
 						{
-							long entry_flags;
+							long entry_flags, old_entry_flags;
+							struct entry_point entry;
 
-							entry_flags= get_entry_point_flags_for_game_type(new_game_type);
-							fill_in_entry_points(dialog, iENTRY_MENU, entry_flags);
+							if(allow_all_levels)
+							{
+								entry_flags= old_entry_flags= NONE;
+							} else {
+								old_entry_flags= get_entry_point_flags_for_game_type(game_information->net_game_type);
+								entry_flags= get_entry_point_flags_for_game_type(new_game_type);
+							}
+
+							menu_index_to_level_entry(get_dialog_control_value(dialog, iENTRY_MENU), old_entry_flags, &entry);
+							
+							/* Get the old one and reset.. */
+							fill_in_entry_points(dialog, iENTRY_MENU, entry_flags, entry.level_number);
 							game_information->net_game_type= new_game_type;
-
-/* Don’t reset the map to 1 if the old map is still available */
-							modify_control(dialog, iENTRY_MENU, NONE, 1);
 
 							setup_dialog_for_game_type(dialog, new_game_type);
 						}
@@ -562,14 +585,18 @@ boolean network_game_setup(
 		}
 		else
 		{
+			short game_limit_type= get_game_duration_radio(dialog);
+			
 			information_is_acceptable= check_setup_information(dialog, game_limit_type);
 		}
 	} while (!information_is_acceptable);	
 
 	if (item_hit == iOK)
 	{
+		short game_limit_type= get_game_duration_radio(dialog);
+			
 		extract_setup_dialog_information(dialog, player_information, game_information, 
-			game_limit_type);
+			game_limit_type, allow_all_levels);
 	}
 	
 	SetPort(old_port);
@@ -587,19 +614,27 @@ boolean network_game_setup(
  *************************************************************************************************/
 static short fill_in_game_setup_dialog(
 	DialogPtr dialog, 
-	player_info *player_information)
+	player_info *player_information,
+	boolean allow_all_levels)
 {
 	Rect item_rect;
 	short item_type, name_length;
-	short game_limit_type;
 	Handle item_handle;
 	long entry_flags;
+	short net_game_type;
 
 	/* Fill in the entry points */
-	entry_flags= get_entry_point_flags_for_game_type(network_preferences->game_type);
-	fill_in_entry_points(dialog, iENTRY_MENU, entry_flags);
+	if(allow_all_levels)
+	{
+		entry_flags= NONE;
+	} else {
+		entry_flags= get_entry_point_flags_for_game_type(network_preferences->game_type);
+	}
+	fill_in_entry_points(dialog, iENTRY_MENU, entry_flags, NONE);
+
 	modify_control(dialog, iGAME_TYPE, CONTROL_ACTIVE, network_preferences->game_type+1);
 	setup_dialog_for_game_type(dialog, network_preferences->game_type);
+	net_game_type= network_preferences->game_type;
 
 	/* set up the name of the player. */
 	name_length= player_preferences->name[0];
@@ -624,20 +659,14 @@ static short fill_in_game_setup_dialog(
 		modify_radio_button_family(dialog, iRADIO_NO_TIME_LIMIT, iRADIO_KILL_LIMIT, iRADIO_KILL_LIMIT);
 		HideDItem(dialog, iTIME_LIMIT); 
 		HideDItem(dialog, iTEXT_TIME_LIMIT);
-		game_limit_type = iRADIO_KILL_LIMIT;
 	}
 	else if (network_preferences->game_is_untimed)
 	{
-		modify_radio_button_family(dialog, iRADIO_NO_TIME_LIMIT, iRADIO_KILL_LIMIT, iRADIO_NO_TIME_LIMIT);
-		HideDItem(dialog, iKILL_LIMIT); HideDItem(dialog, iTEXT_KILL_LIMIT);
-		HideDItem(dialog, iTIME_LIMIT); HideDItem(dialog, iTEXT_TIME_LIMIT);
-		game_limit_type = iRADIO_NO_TIME_LIMIT;
+		setup_for_untimed_game(dialog);
 	}
 	else
 	{
-		modify_radio_button_family(dialog, iRADIO_NO_TIME_LIMIT, iRADIO_KILL_LIMIT, iRADIO_TIME_LIMIT);
-		HideDItem(dialog, iKILL_LIMIT);	HideDItem(dialog, iTEXT_KILL_LIMIT);
-		game_limit_type = iRADIO_TIME_LIMIT;
+		setup_for_timed_game(dialog);
 	}
 	if (player_information->name[0]==0) modify_control(dialog, iOK, CONTROL_INACTIVE, NONE);
 
@@ -645,10 +674,62 @@ static short fill_in_game_setup_dialog(
 	modify_control(dialog, iREAL_TIME_SOUND, CONTROL_ACTIVE, network_preferences->allow_microphone);
 	set_dialog_game_options(dialog, network_preferences->game_options);
 
+	/* Setup the team popup.. */
+	if(!get_dialog_control_value(dialog, iFORCE_UNIQUE_TEAMS))
+	{
+		modify_control(dialog, iGATHER_TEAM, CONTROL_INACTIVE, NONE);
+	} else {
+		modify_control(dialog, iGATHER_TEAM, CONTROL_ACTIVE, NONE);
+	}
+
 	// set up network options
+	setup_network_speed_for_gather(dialog);
 	modify_control(dialog, iNETWORK_SPEED, CONTROL_ACTIVE, network_preferences->type+1);
 
-	return game_limit_type;
+	return net_game_type;
+}
+
+static void setup_for_untimed_game(
+	DialogPtr dialog)
+{
+	modify_radio_button_family(dialog, iRADIO_NO_TIME_LIMIT, iRADIO_KILL_LIMIT, iRADIO_NO_TIME_LIMIT);
+	HideDItem(dialog, iKILL_LIMIT); HideDItem(dialog, iTEXT_KILL_LIMIT);
+	HideDItem(dialog, iTIME_LIMIT); HideDItem(dialog, iTEXT_TIME_LIMIT);
+}
+
+static void setup_for_timed_game(
+	DialogPtr dialog)
+{
+	HideDItem(dialog, iTEXT_KILL_LIMIT); HideDItem(dialog, iKILL_LIMIT);
+	ShowDItem(dialog, iTIME_LIMIT); ShowDItem(dialog, iTEXT_TIME_LIMIT);
+	modify_radio_button_family(dialog, iRADIO_NO_TIME_LIMIT, iRADIO_KILL_LIMIT, iRADIO_TIME_LIMIT);
+
+	return;
+}
+
+static short get_game_duration_radio(
+	DialogPtr dialog)
+{
+	short items[]= {iRADIO_NO_TIME_LIMIT, iRADIO_TIME_LIMIT, iRADIO_KILL_LIMIT};
+	short index, item_hit;
+	
+	for(index= 0; index<sizeof(items)/sizeof(items[0]); ++index)
+	{
+		short item_type;
+		ControlHandle control;
+		Rect bounds;
+	
+		GetDItem(dialog, items[index], &item_type, (Handle *) &control, &bounds);
+		if(GetCtlValue(control)) 
+		{
+			item_hit= items[index];
+			break;
+		}
+	}
+	
+	assert(index!=sizeof(items)/sizeof(items[0]));
+	
+	return item_hit;
 }
 
 /*************************************************************************************************
@@ -661,7 +742,8 @@ static void extract_setup_dialog_information(
 	DialogPtr dialog,
 	player_info *player_information,
 	game_info *game_information,
-	short game_limit_type)
+	short game_limit_type,
+	boolean allow_all_levels)
 {
 	Rect                item_rect;
 	short               item_type;
@@ -706,7 +788,12 @@ static void extract_setup_dialog_information(
 	game_information->kill_limit = extract_number_from_text_item(dialog, iKILL_LIMIT);
 
 	/* Determine the entry point flags by the game type. */
-	entry_flags= get_entry_point_flags_for_game_type(game_information->net_game_type);
+	if(allow_all_levels)
+	{
+		entry_flags= NONE;
+	} else {
+		entry_flags= get_entry_point_flags_for_game_type(game_information->net_game_type);
+	}
 	menu_index_to_level_entry(get_dialog_control_value(dialog, iENTRY_MENU), entry_flags, &entry);
 	network_preferences->game_type= game_information->net_game_type;
 
@@ -751,6 +838,12 @@ static void extract_setup_dialog_information(
 
 	write_preferences();
 
+	/* Don't save the preferences of their team... */
+	if(game_information->game_options & _force_unique_teams)
+	{
+		player_information->team= player_information->color;
+	}
+
 	return;
 }
 
@@ -778,7 +871,8 @@ static void set_dialog_game_options(
 static void fill_in_entry_points(
 	DialogPtr dialog,
 	short item,
-	long entry_flags)
+	long entry_flags,
+	short default_level)
 {
 	short item_type;
 	Rect bounds;
@@ -786,6 +880,7 @@ static void fill_in_entry_points(
 	MenuHandle menu;
 	short map_index, menu_index;
 	struct entry_point entry;
+	short default_item= NONE;
 
 	/* Add the maps.. */
 	GetDItem(dialog, item, &item_type, (Handle *) &control, &bounds);
@@ -802,13 +897,31 @@ static void fill_in_entry_points(
 	{
 		AppendMenu(menu, "\p ");
 		c2pstr(entry.level_name);
-		SetItem(menu, ++menu_index, entry.level_name);
+		menu_index++;
+		if(entry.level_name[0])
+		{
+			SetItem(menu, menu_index, entry.level_name);
+		}
+
+		if(entry.level_number==default_level) 
+		{
+			default_item= menu_index;
+		}
 	}
 	SetCtlMax(control, menu_index);
 	
-	if(GetCtlValue(control)>=GetCtlMax(control)) SetCtlValue(control, 1);
+	if(default_item != NONE)
+	{
+		SetCtlValue(control, default_item);	
+	} 
+	else if(GetCtlValue(control)>=GetCtlMax(control)) 
+	{	
+		SetCtlValue(control, 1);
+	}
 
 	if (!CountMItems(menu)) modify_control(dialog, iOK, CONTROL_INACTIVE, 0);
+
+	return;
 }
 
 
@@ -847,7 +960,9 @@ static long get_dialog_game_options(
  * Purpose:  check to make sure that the user entered usable information in the dialog.
  *
  *************************************************************************************************/
-boolean check_setup_information(DialogPtr dialog, short game_limit_type)
+boolean check_setup_information(
+	DialogPtr dialog, 
+	short game_limit_type)
 {
 	Rect     item_rect;
 	short    item_type;
@@ -861,7 +976,6 @@ boolean check_setup_information(DialogPtr dialog, short game_limit_type)
 	{
 		bad_item = iTIME_LIMIT;
 		information_is_acceptable = FALSE;
-		
 	}
 	else
 	{
@@ -1091,7 +1205,6 @@ static pascal Boolean join_dialog_filter_proc(
 			break;
 
 		case netCancelled: /* the server cancelled the game; force bail */
-			alert_user(infoError, strNETWORK_ERRORS, netErrServerCanceled, 0);
 			*item_hit= iCANCEL;
 			handled= TRUE;
 			break;
@@ -1126,7 +1239,6 @@ static pascal Boolean join_dialog_filter_proc(
 			break;
 
 		case netJoinErrorOccurred:
-			alert_user(infoError, strNETWORK_ERRORS, netErrJoinFailed, 0);
 			*item_hit= iCANCEL;
 			handled= TRUE;
 			break;
@@ -1219,7 +1331,7 @@ static void setup_network_list_box(
 	}
 
 	/* spawn an asynchronous network name lookup */
-	error= NetLookupOpen("\p=", PLAYER_TYPE, zone, MARATHON_VERSION,
+	error= NetLookupOpen("\p=", PLAYER_TYPE, zone, MARATHON_NETWORK_VERSION,
 		network_list_box_update_proc, NetEntityNotInGame);
 	if (error!=noErr) dprintf("NetLookupOpen() returned %d", error);
 
@@ -1351,54 +1463,96 @@ static void reassign_player_colors(
 	short player_index,
 	short num_players)
 {
-	short i;
 	short actual_colors[MAXIMUM_NUMBER_OF_PLAYERS];  // indexed by player
 	boolean colors_taken[NUMBER_OF_TEAM_COLORS];   // as opposed to desired team. indexed by team
 	game_info *game;
-	short team_color;
 	
 #pragma unused(player_index)
 
 	assert(num_players<=MAXIMUM_NUMBER_OF_PLAYERS);
 	game= NetGetGameData();
-	
-	for(team_color= 0; team_color<NUMBER_OF_TEAM_COLORS; ++team_color)
+
+	memset(colors_taken, FALSE, sizeof(colors_taken));
+	memset(actual_colors, NONE, sizeof(actual_colors));
+
+	if(game->game_options & _force_unique_teams)
 	{
-		memset(colors_taken, FALSE, sizeof(boolean) * NUMBER_OF_TEAM_COLORS);
-		memset(actual_colors, NONE, sizeof(short) * MAXIMUM_NUMBER_OF_PLAYERS);
-	
-		// let's mark everybody down for the teams that they can get without conflicts.
-		for (i = 0; i < num_players; i++)
+		short index;
+		
+		for(index= 0; index<num_players; ++index)
 		{
-			player_info *player= NetGetPlayerData(i);
-	
-			if (player->team==team_color && !colors_taken[player->desired_color])
+			player_info *player= NetGetPlayerData(index);
+			if(!colors_taken[player->desired_color])
 			{
 				player->color= player->desired_color;
-				colors_taken[player->color] = TRUE;
-				actual_colors[i]= player->color;
+				player->team= player->color;
+				colors_taken[player->color]= TRUE;
+				actual_colors[index]= player->color;
 			}
 		}
 		
-		// ok, everyone remaining gets a team that we pick for them.
-		for (i = 0; i < num_players; i++)
+		/* Now give them a random color.. */
+		for (index= 0; index<num_players; index++)
 		{
-			player_info *player= NetGetPlayerData(i);
+			player_info *player= NetGetPlayerData(index);
 
-			if (player->team==team_color && actual_colors[i]==NONE) // This player needs a team
+			if (actual_colors[index]==NONE) // This player needs a team
 			{
-				short j;
+				short remap_index;
 				
-				for (j = 0; j < num_players; j++)
+				for (remap_index= 0; remap_index<num_players; remap_index++)
 				{
-					if (!colors_taken[j])
+					if (!colors_taken[remap_index])
 					{
-						player->color= j;
-						colors_taken[j] = TRUE;
+						player->color= remap_index;
+						player->team= remap_index;
+						colors_taken[remap_index] = TRUE;
 						break;
 					}
 				}
-				assert(j < num_players);
+				assert(remap_index<num_players);
+			}
+		}	
+	} else {
+		short index;
+		short team_color;
+		
+		/* Allow teams.. */
+		for(team_color= 0; team_color<NUMBER_OF_TEAM_COLORS; ++team_color)
+		{
+			// let's mark everybody down for the teams that they can get without conflicts.
+			for (index = 0; index < num_players; index++)
+			{
+				player_info *player= NetGetPlayerData(index);
+		
+				if (player->team==team_color && !colors_taken[player->desired_color])
+				{
+					player->color= player->desired_color;
+					colors_taken[player->color] = TRUE;
+					actual_colors[index]= player->color;
+				}
+			}
+			
+			// ok, everyone remaining gets a team that we pick for them.
+			for (index = 0; index < num_players; index++)
+			{
+				player_info *player= NetGetPlayerData(index);
+	
+				if (player->team==team_color && actual_colors[index]==NONE) // This player needs a team
+				{
+					short j;
+					
+					for (j = 0; j < num_players; j++)
+					{
+						if (!colors_taken[j])
+						{
+							player->color= j;
+							colors_taken[j] = TRUE;
+							break;
+						}
+					}
+					assert(j < num_players);
+				}
 			}
 		}
 	}
@@ -1498,13 +1652,15 @@ static void setup_dialog_for_game_type(
 			GetDItem(dialog, iTEXT_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, killsString);
 			SetIText(item, temporary);
+
+			/* Untimed.. */
+			setup_for_untimed_game(dialog);
 			break;
 			
 		case _game_of_kill_monsters:
 		case _game_of_king_of_the_hill:
 		case _game_of_kill_man_with_ball:
 		case _game_of_tag:
-			/* Allow them to decide on the burn items on death (and not a demo) */
 			modify_control(dialog, iBURN_ITEMS_ON_DEATH, CONTROL_ACTIVE, FALSE);
 			modify_control(dialog, iUNLIMITED_MONSTERS, CONTROL_ACTIVE, NONE);
 
@@ -1515,6 +1671,8 @@ static void setup_dialog_for_game_type(
 			GetDItem(dialog, iTEXT_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, killsString);
 			SetIText(item, temporary);
+
+			setup_for_timed_game(dialog);
 			break;
 
 		case _game_of_capture_the_flag:
@@ -1529,6 +1687,8 @@ static void setup_dialog_for_game_type(
 			GetDItem(dialog, iTEXT_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, flagsString);
 			SetIText(item, temporary);
+
+			setup_for_timed_game(dialog);
 			break;
 			
 		case _game_of_rugby:
@@ -1543,18 +1703,23 @@ static void setup_dialog_for_game_type(
 			GetDItem(dialog, iTEXT_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, pointsString);
 			SetIText(item, temporary);
+
+			setup_for_timed_game(dialog);
 			break;
 
 		case _game_of_defense:
 			/* Allow them to decide on the burn items on death */
 			modify_control(dialog, iBURN_ITEMS_ON_DEATH, CONTROL_ACTIVE, FALSE);
 			modify_control(dialog, iUNLIMITED_MONSTERS, CONTROL_ACTIVE, NONE);
+			setup_for_timed_game(dialog);
 			break;
 			
 		default:
 			halt();
 			break;
 	}
+
+	return;
 }
 
 /* For join & gather dialogs. */
@@ -2929,4 +3094,72 @@ static boolean will_new_mode_reorder_dialog(
 	}
 	
 	return may_reorder;
+}
+
+static void setup_network_speed_for_join(
+	DialogPtr dialog)
+{
+	MenuHandle menu;
+	short index;
+	
+	menu= get_popup_menu_handle(dialog, iJOIN_NETWORK_TYPE);
+	for(index= 0; index<NUMBER_OF_TRANSPORT_TYPES; ++index)
+	{
+		if(!NetTransportAvailable(index))
+		{
+			DisableItem(menu, index+1);
+		}
+	}
+
+	return;
+}
+
+static void setup_network_speed_for_gather(
+	DialogPtr dialog)
+{
+	short index;
+	MenuHandle menu;
+	
+	menu= get_popup_menu_handle(dialog, iNETWORK_SPEED);
+	for(index= 0; index<NUMBER_OF_NETWORK_TYPES; ++index)
+	{
+		switch(index)
+		{
+			case _appletalk_remote:
+				/* Should actually be able to check for appletalk remote */
+//				break;
+			case _localtalk:
+			case _tokentalk:
+			case _ethernet:
+				if(!NetTransportAvailable(kNetworkTransportType))
+				{
+					DisableItem(menu, index+1);
+				}
+				break;
+				
+#ifdef USE_MODEM
+			case _modem:
+				if(!NetTransportAvailable(kModemTransportType))
+				{
+					DisableItem(menu, index+1);
+				}
+				break;
+#endif				
+			default:
+				halt();
+				break;
+		}
+	}
+
+	return;
+}
+
+/* Stupid function, here as a hack.. */
+static boolean key_is_down(
+	short key_code)
+{
+	KeyMap key_map;
+	
+	GetKeys(&key_map);
+	return ((((byte*)key_map)[key_code>>3] >> (key_code & 7)) & 1);
 }

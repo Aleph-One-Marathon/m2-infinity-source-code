@@ -27,12 +27,18 @@ Monday, August 30, 1993 3:18:37 PM
 	menu bar?, what menu bar?
 Wednesday, December 8, 1993 1:02:36 PM
 	this is now MARATHON.
+Wednesday, June 7, 1995 10:50:05 AM
+	this is now MARATHON II.
+Thursday, September 28, 1995 7:37:12 PM
+	reintegrated interface.c/shell.c.  Tried to keep this clean, but I didn't succeed as
+	well as I would have liked.
 */
 
-
 #include "macintosh_cseries.h"
+#include <appleevents.h>
+#include <aliases.h>
+
 #include "my32bqd.h"
-#include "preferences.h"
 
 #include "map.h"
 #include "monsters.h"
@@ -41,17 +47,35 @@ Wednesday, December 8, 1993 1:02:36 PM
 #include "shell.h"
 #include "interface.h"
 #include "sound.h"
-#include "music.h"
 #include "fades.h"
+#include "screen.h"
 
-#include <appleevents.h>
-//#include <gestaltequ.h>
+#include "portable_files.h"
+#include "music.h"
+#include "images.h"
+#include "vbl.h"
+
+#include "preferences.h"
 #include "tags.h" /* for scenario file type.. */
 
 #include "network_sound.h"
 #include "mouse.h"
 #include "screen_drawing.h"
 #include "computer_interface.h"
+#include "game_wad.h" /* yuck. •• */
+#include "game_window.h" /* for draw_interface() */
+#include "extensions.h"
+
+#include "items.h"
+#include "macintosh_network.h" /* For NetDDPOpen() */
+
+#include "interface_menus.h"
+
+#ifndef FINAL
+#include "weapons.h" /* To remove process_new_item_for_reloading warning and debug_print_weapon_status warning */
+#endif
+
+#define kMINIMUM_NETWORK_HEAP (3*MEG)
 
 #ifdef PERFORMANCE
 #include <Perf.h>
@@ -64,111 +88,10 @@ Wednesday, December 8, 1993 1:02:36 PM
 /* ---------- constants */
 #define alrtQUIT_FOR_SURE 138
 
-#define TICKS_BETWEEN_XNEXTEVENT_CALLS 10
-#define MAXIMUM_CONSECUTIVE_GETOSEVENT_CALLS 12 // 2 seconds
-
-#ifdef COMPILE_TIME
-#define DAYS_TO_EXPIRATION 18
-#define SECONDS_TO_EXPIRATION (DAYS_TO_EXPIRATION * 60 * 60 * 24)
-#define EXPIRATION_TIME (COMPILE_TIME + SECONDS_TO_EXPIRATION)
-#endif
-
 #define kMINIMUM_MUSIC_HEAP (4*MEG)
 #define kMINIMUM_SOUND_HEAP (3*MEG)
 
-#define MAXIMUM_KEYWORD_LENGTH 20
-#define NUMBER_OF_KEYWORDS (sizeof(keywords)/sizeof(struct keyword_data))
-
-#define CLOSE_WITHOUT_WARNING_DELAY (5*TICKS_PER_SECOND)
-
-#define menuGAME  128
-
-enum // cheat tags
-{
-	_tag_health,
-	_tag_oxygen,
-	_tag_map,
-	_tag_fusion,
-	_tag_invincible,
-	_tag_invisible,
-	_tag_extravision,
-	_tag_infravision,
-	_tag_pistol,
-	_tag_rifle,
-	_tag_missle,
-	_tag_toaster,  // flame-thrower
-	_tag_pzbxay,
-	_tag_ammo,
-	_tag_pathways,
-	_tag_view,
-	_tag_jump,
-	_tag_aslag,
-	_tag_save
-};
-
-enum // command keys
-{
-	_command_key_pause,
-	_command_key_save,
-	_command_key_revert,
-	_command_key_close,
-	_command_key_quit,
-	NUMBER_OF_COMMAND_KEYS
-};
-
-/* ---------- resources */
-
-/* ---------- structures */
-struct keyword_data
-{
-	short tag;
-	char *keyword; /* in uppercase */
-};
-
-struct command_key_data
-{
-	short tag;
-	short command_key; // gotten from resource
-};
-
-/* ---------- globals */
-static struct keyword_data keywords[]=
-{
-	{_tag_health, "HEALTH"},
-	{_tag_oxygen, "OXYGEN"},
-	{_tag_map, "MAP"},
-	{_tag_invincible, "HAVESOME"},
-	{_tag_infravision, "ISEEYOU"},
-	{_tag_extravision, "FISHEYE"},
-	{_tag_invisible, "BYE"},
-	{_tag_pistol, "PISTOL"},
-	{_tag_rifle, "RIFLE"},
-	{_tag_missle, "POW"},
-	{_tag_toaster, "TOAST"},
-	{_tag_fusion, "MELT"},
-	{_tag_pzbxay, "PZBXAY"}, // the alien shotgon, in the phfor's language
-	{_tag_ammo, "AMMO"},
-	{_tag_jump, "ASD"},
-	{_tag_aslag, "ASLAG"},
-	{_tag_save, "SAVE"},
-};
-static char keyword_buffer[MAXIMUM_KEYWORD_LENGTH+1];
-
-static struct command_key_data command_keys[NUMBER_OF_COMMAND_KEYS]=
-{
-	{_command_key_pause},
-	{_command_key_save},
-	{_command_key_revert},
-	{_command_key_close},
-	{_command_key_quit}
-};
-
-static short game_status;
-struct preferences_data *preferences;
 struct system_information_data *system_information;
-static short initial_sound_volume;
-
-static boolean suppress_background_tasks= TRUE;
 
 #ifdef envppc
 QDGlobals qd;
@@ -180,138 +103,51 @@ TP2PerfGlobals perf_globals;
 
 extern long first_frame_tick, frame_count; /* for determining frame rate */
 
-/* ---------- private code */
+/* ---------- externs that I couldn't fit into the #include heirarchy nicely */
+extern boolean load_and_start_game(FileDesc *file);
+extern boolean handle_open_replay(FileDesc *replay_file);
 
-static void process_event(EventRecord *event);
-static void process_key(EventRecord *event, short key);
-static process_command_key(short key);
-static short process_keyword_key(char key);
+/* ---------- private code */
 
 static void verify_environment(void);
 static void initialize_application_heap(void);
 
+static void initialize_system_information(void);
 static void initialize_core_events(void);
-void handle_high_level_event(EventRecord *event);
+static void initialize_marathon_music_handler(void);
 static pascal OSErr handle_open_document(AppleEvent *event, AppleEvent *reply, long myRefCon);
 static pascal OSErr handle_quit_application(AppleEvent *event, AppleEvent *reply, long myRefCon);
 static pascal OSErr handle_print_document(AppleEvent *event, AppleEvent *reply, long myRefCon);
 static pascal OSErr handle_open_application(AppleEvent *event, AppleEvent *reply, long myRefCon);
 static OSErr required_appleevent_check(AppleEvent *event);
-static boolean has_system_seven(void);
-static void get_machine_type(boolean *machine_is_68k, boolean *machine_is_68040, boolean *machine_is_ppc);
 
 static void marathon_dialog_header_proc(DialogPtr dialog, Rect *frame);
 
-static void adjust_chase_camera(void);
-short can_get_to_point(short start_polygon, world_point3d *start, world_point3d *end);
+static void process_event(EventRecord *event);
+static void process_screen_click(EventRecord *event);
+static void process_key(EventRecord *event, short key);
+static void wait_for_highlevel_event(void);
+static void main_event_loop(void);
+static void handle_high_level_event(EventRecord *event);
 
-void handle_keyword(short type_of_cheat);
+void update_any_window(WindowPtr window, EventRecord *event);
+void activate_any_window(WindowPtr window, EventRecord *event, boolean active);
+
+#ifndef FINAL
+static short process_keyword_key(char key);
+static void handle_keyword(short type_of_cheat);
+#endif
+
 boolean is_keypad(short keycode);
-static void setup_command_keys(void);
-
-static void check_for_map_file(void);
-
-static void script_demo(void);
 
 /* ---------- code */
 
 void main(
 	void)
 {	
-
-	set_game_status(no_game_in_progress);
-	
 	initialize_application_heap();
-
-	initialize_core_events();
-
-	do_top_level_interface();
-	
+	main_event_loop();
 	exit(0);
-}
-
-void game_main_event_loop(void)
-{
-	boolean  done = FALSE;
-	EventRecord event;
-	long last_xnextevent_call= 0;
-	short consecutive_getosevent_calls= 0;
-
-	while (!done)
-	{
-		short ticks_elapsed;
-		
-		/* get and handle events; GetOSEvent() is much less friendly to background processes than
-			WaitNextEvent() */
-		if (TickCount()-last_xnextevent_call>=TICKS_BETWEEN_XNEXTEVENT_CALLS)
-		{
-			stay_awake();
-			global_idle_proc();
-			if (suppress_background_tasks && EmptyRgn(((WindowPeek)screen_window)->updateRgn)) // && consecutive_getosevent_calls<MAXIMUM_CONSECUTIVE_GETOSEVENT_CALLS)
-			{
-				if (GetOSEvent(everyEvent, &event)) process_event(&event);
-//				consecutive_getosevent_calls+= 1;
-			}
-			else
-			{
-				if (WaitNextEvent(everyEvent, &event, 0, (RgnHandle) NULL)) process_event(&event);
-//				consecutive_getosevent_calls= 0;
-			}
-			FlushEvents(keyDownMask|keyUpMask|autoKeyMask, 0);
-			
-			last_xnextevent_call= TickCount();
-		}
-
-		network_speaker_idle_proc();
-		sound_manager_idle_proc();
-
-		switch(get_game_status())
-		{
-			case game_in_progress:
-			case replay_in_progress:
-			case demo_in_progress:
-				break;
-			case user_wants_quit_from_game:
-				done = TRUE; // bring up dialog, etc...
-				break;
-			case user_wants_quit_from_demo:
-			case user_wants_quit_from_replay:
-				done = TRUE;
-				break;
-			case demo_wants_to_switch_demos:
-				done = TRUE;
-				break;
-			case no_game_in_progress:
-				done = TRUE;
-				halt(); // shouldn't happen?
-				break;
-			case user_wants_to_revert_game:
-				revert_game();
-				game_status = game_in_progress;
-				break;
-			default:
-				halt();
-				break;
-		}
-		
-		/* if we’re not paused and there’s something to draw (i.e., anything different from
-			last time), render a frame */
-		if (!done && get_keyboard_controller_status() && (ticks_elapsed= update_world()))
-		{
-			switch (preferences->input_device)
-			{
-				case _mouse_yaw_pitch:
-				case _mouse_yaw_velocity:
-// now called from parse_keymap() (so calling it here would eat data)
-//					mouse_idle(preferences->input_device); 
-					break;
-			}
-
-			render_screen(ticks_elapsed);
-		}
-	}
-	
-	return;
 }
 
 /* somebody wants to do something important; free as much temporary memory as possible and
@@ -322,6 +158,26 @@ void free_and_unlock_memory(
 	stop_all_sounds();
 	
 	return;
+}
+
+void *level_transition_malloc(
+	size_t size)
+{
+	void *ptr= malloc(size);
+	if (!ptr)
+	{
+		unload_all_sounds();
+		
+		ptr= malloc(size);
+		if (!ptr)
+		{
+			unload_all_collections();
+			
+			ptr= malloc(size);
+		}
+	}
+	
+	return ptr;
 }
 
 /* ---------- private code */
@@ -347,13 +203,6 @@ static void initialize_application_heap(
 	initialize_debugger(TRUE);
 #endif
 
-//	{
-//		OSErr error;
-//		
-//		error= InitTSMAwareApplication();
-//		vassert(error==noErr, csprintf(temporary, "InitTSMAwareApplication() == #%d", error));
-//	}
-
 	SetCursor(*GetCursor(watchCursor));
 
 	qd.randSeed = TickCount();
@@ -367,326 +216,84 @@ static void initialize_application_heap(
 	}
 #endif
 
-	set_to_default_map();
+	/* Determine what type of system we are working on.. */
+	initialize_system_information();
+	initialize_core_events();
 
-	read_preferences_file(&preferences, getpstr(temporary, strFILENAMES, filenamePREFERENCES),
-		PREFERENCES_CREATOR, PREFERENCES_TYPE, PREFERENCES_VERSION, sizeof(struct preferences_data),
-		initialize_preferences);
-	verify_preferences(preferences);
-//	if (!machine_supports_16bit() && preferences->screen_mode.bit_depth == 16)
-//	{
-//		preferences->screen_mode.bit_depth = 8;
-//		write_preferences_file(preferences);
-//	}
-
-	GetDateTime(&preferences->last_time_ran);
-	write_preferences_file(preferences);
-
-#if defined(EXPIRATION_TIME) && !defined(AI_LIBRARY)
-	{
-		Handle         some_resource;
-		unsigned long  current_time;
-		
-		// we’re assuming that beta copies are all fat versions
-		some_resource = GetResource('SOCK', 128); // the socket listener
-		if (!some_resource)
-		{
-			alert_user(fatalError, strERRORS, copyHasExpired, 0);
-			ExitToShell();
-		}
-
-		GetDateTime(&current_time);
-		if (current_time < preferences->last_time_ran || current_time > EXPIRATION_TIME)
-		{
-			some_resource= GetResource('CODE', 8); // the “render” segment
-			if (some_resource) RmveResource(some_resource);
-			some_resource= GetResource('SOCK', 128); // the socket listener
-			if (some_resource) RmveResource(some_resource);
-			UpdateResFile(CurResFile());
-			alert_user(fatalError, strERRORS, copyHasExpired, 0);
-			ExitToShell(); // fool the cracker. heh.
-		}
-
-	}
-#endif
+	initialize_preferences();
+	GetDateTime(&player_preferences->last_time_ran);
+	write_preferences();
 
 	initialize_my_32bqd();
 	verify_environment();
 
-	if (FreeMem()>kMINIMUM_SOUND_HEAP) initialize_sound_manager((struct sound_manager_parameters *)&preferences->sound_parameters);
-	if (FreeMem()>kMINIMUM_MUSIC_HEAP) initialize_background_music();
+	if (FreeMem()>kMINIMUM_SOUND_HEAP) initialize_sound_manager(sound_preferences);
+
+	initialize_marathon_music_handler();
 
 	initialize_keyboard_controller();
-	initialize_screen(&preferences->screen_mode);
+	initialize_screen(&graphics_preferences->screen_mode);
 	initialize_marathon();
 	initialize_screen_drawing();
+	initialize_terminal_manager();
 	initialize_shape_handler();
 	initialize_fades();
 
 	kill_screen_saver();
 
 	set_dialog_header_proc(marathon_dialog_header_proc);
+	initialize_images_manager();
 
-	setup_command_keys();
-	
+	/* Load the environment.. */
+	load_environment_from_preferences();
+
+	initialize_game_state();
 	SetCursor(&qd.arrow);
 
-	return;
-}
-
-/* look for obviously ridiculous values in the preferences */
-void verify_preferences(
-	struct preferences_data *preferences)
-{
-	short    i;
-	boolean  need_to_reinitialize = FALSE;
-	
-	if (preferences->name[0] > PREFERENCES_NAME_LENGTH || preferences->name[0] < 0)
-		need_to_reinitialize = TRUE;
-	else if (preferences->screen_mode.size != _100_percent
-		&&   preferences->screen_mode.size != _75_percent
-		&&   preferences->screen_mode.size != _50_percent
-		&&   preferences->screen_mode.size != _full_screen)
-		need_to_reinitialize = TRUE;
-	else if (preferences->input_device != _keyboard_or_game_pad 
-		&&   preferences->input_device != _mouse_yaw_pitch
-		&&   preferences->input_device != _mouse_yaw_velocity
-		&&   preferences->input_device != _cybermaxx_input)
-		need_to_reinitialize = TRUE;
-	else if (preferences->screen_mode.bit_depth != 8 && preferences->screen_mode.bit_depth != 16 && preferences->screen_mode.bit_depth != 32)
-		need_to_reinitialize = TRUE;
-	else if (preferences->difficulty_level < _wuss_level || preferences->difficulty_level > _total_carnage_level)
-		need_to_reinitialize = TRUE;
-	else
-	{
-		for (i = 0; i < NUMBER_OF_KEYS; i++)
-		{
-			if (preferences->keycodes[i] > 0x7f || preferences->keycodes[i] < 0)
-			{
-				need_to_reinitialize = TRUE;
-				break;
-			}
-		}
-	}
-	
-	if (need_to_reinitialize)
-	{
-		initialize_preferences(preferences);
-		write_preferences_file(preferences);
-	}
-}
-
-/* passed to read_preferences() */
-void initialize_preferences(
-	struct preferences_data *preferences)
-{
-	short    i;
-	boolean  machine_is_68k, machine_is_ppc, machine_is_68040;
-
-	set_random_seed(TickCount());
-	for (i= 0; i<sizeof(struct preferences_data)/sizeof(word); ++i) ((word*)preferences)[i]= random();
-
-#if !defined(DEMO) && defined(FINAL)
-	ask_for_serial_number();
-#endif
-	
-	get_machine_type(&machine_is_68k, &machine_is_68040, &machine_is_ppc);
-
-	preferences->device_spec.slot= NONE;
-	preferences->device_spec.flags= deviceIsColor;
-	preferences->device_spec.bit_depth= 8;
-		
-	preferences->screen_mode.gamma_level= DEFAULT_GAMMA_LEVEL;
-	if (hardware_acceleration_code() == _valkyrie_acceleration)
-	{
-		preferences->screen_mode.size= _100_percent;
-		preferences->screen_mode.bit_depth = 16;
-		preferences->screen_mode.high_resolution = FALSE;
-		preferences->screen_mode.acceleration = _valkyrie_acceleration;
-		preferences->screen_mode.texture_floor= TRUE, preferences->screen_mode.texture_ceiling= TRUE;
-	}
-	else if (machine_is_68k)
-	{
-		preferences->screen_mode.size= _100_percent;
-		preferences->screen_mode.high_resolution= FALSE;
-		if (machine_is_68040)
-			preferences->screen_mode.texture_floor= TRUE, preferences->screen_mode.texture_ceiling= TRUE;
-		else
-			preferences->screen_mode.texture_floor= FALSE, preferences->screen_mode.texture_ceiling= FALSE;
-		preferences->screen_mode.acceleration = _no_acceleration;
-		preferences->screen_mode.bit_depth = 8;
-	}
-	else // we got a good machine
-	{
-		preferences->screen_mode.size= _100_percent;
-		preferences->screen_mode.high_resolution= TRUE;
-		preferences->screen_mode.texture_floor= TRUE, preferences->screen_mode.texture_ceiling= TRUE;
-		preferences->screen_mode.acceleration = _no_acceleration;
-		preferences->screen_mode.bit_depth = 8;
-	}
-	
-	preferences->screen_mode.draw_every_other_line= FALSE;
-	
-	/* new with version 2 of the preferences */
-	preferences->name[0] = 0;
-	preferences->team = 0;
-	
-	/* new with version 4 of the prefs */
-	set_default_keys(preferences, _standard_keyboard_setup);
-	for (i = 0; i < NUMBER_UNUSED_KEYS; i++)
-	{
-		preferences->unused_keycodes[i] = 0;
-	}
-	
-	/* new with version 5 of the prefs */
-	preferences->render_compass= TRUE;
-	
-	/* new with version 7 of the prefs */
-	GetDateTime(&preferences->last_time_ran);
-	
-	/* version 8 eliminated the preferences version—now in preferences.c */
-	
-	/* new with version 9 */
-	preferences->input_device = _keyboard_or_game_pad;
-	
-	/* new with version 10 */
-	preferences->record_every_game = TRUE;
-
-	/* new with version 12 */
-	preferences->difficulty_level = _normal_level;
-
-	/* new with version 13 */
-	if (machine_is_ppc && can_play_background_music())
-		preferences->background_music_on = TRUE;
-	else
-		preferences->background_music_on = FALSE;
-
-	/* new with version 14. network game options */
-	preferences->network_type = NONE;
-	preferences->allow_microphone = TRUE;
-	preferences->network_difficulty_level = 0;
-	preferences->network_game_options =	_multiplayer_game | _ammo_replenishes | _weapons_replenish
-		| _specials_replenish |	_monsters_replenish | _burn_items_on_death | _suicide_is_penalized 
-		| _force_unique_teams;
-#ifdef DEMO
-	preferences->network_time_limit = 5 * TICKS_PER_SECOND * 60;
-	preferences->network_game_options&= ~_suicide_is_penalized;
-#else
-	preferences->network_time_limit = 10 * TICKS_PER_SECOND * 60;
-#endif
-	preferences->network_kill_limit = 10;
-	preferences->network_entry_point= 0;
-	
-	/* new with version 15 */
-	preferences->network_game_is_untimed = FALSE;
-
-	/* set sound parameters */
-	default_sound_manager_parameters((struct sound_manager_parameters *)&preferences->sound_parameters);
-
-	return;
-}
-
-static void process_event(
-	EventRecord *event)
-{
-	WindowPtr window;
-	short part_code;
-
-	switch (event->what)
-	{
-		case mouseDown:
-			part_code= FindWindow(event->where, &window);
-			switch (part_code)
-			{
-				case inSysWindow: /* DAs and the menu bar can blow me */
-				case inMenuBar:
-					halt();
-					
-				case inContent:
-					// process_screen_click(event); // no longer does anything.
-					if (get_game_status() == demo_in_progress)
-					{
-						set_game_status(user_wants_quit_from_demo);
-					}
-					break;
-			}
-			break;
-		
-		case keyDown:
-		case autoKey:
-			process_key(event, toupper(event->message&charCodeMask));
-			break;
-			
-		case updateEvt:
-			update_any_window((WindowPtr)(event->message), event);
-			break;
-			
-		case activateEvt:
-			activate_any_window((WindowPtr)(event->message), event, event->modifiers&activeFlag);
-			break;
-
-		case OSEvt:
-			switch (event->message>>24)
-			{
-				case SuspendResumeMessage:
-					if (event->message&ResumeMask)
-					{
-						/* resume */
-						SetCursor(&qd.arrow);
-					}
-					else
-					{
-						/* suspend */
-					}
-					break;
-			}
-			break;
-	}
-		
 	return;
 }
 
 void global_idle_proc(
 	void)
 {
-	background_music_idle_proc();
+	music_idle_proc();
+	network_speaker_idle_proc();
+	sound_manager_idle_proc();
 	
 	return;
 }
 
-static void process_key(
+void handle_game_key(
 	EventRecord *event,
 	short key)
 {
-	short    virtual, type_of_cheat;
-	boolean  changed_screen_mode = FALSE;
-	boolean  changed_prefs = FALSE;
-	boolean  changed_volume = FALSE;
-
-	if (key == 0) // this is what stay_awake posts
-		return;
+	short virtual;
+	boolean changed_screen_mode= FALSE;
+	boolean changed_prefs= FALSE;
+	boolean changed_volume= FALSE;
+	boolean update_interface= FALSE;
 
 	virtual = (event->message >> 8) & charCodeMask;
 	
-	if (!game_is_networked && get_game_status() == game_in_progress)
+#ifndef FINAL
+	if (!game_is_networked && (event->modifiers & controlKey))
 	{
+		short type_of_cheat;
+		
 		type_of_cheat = process_keyword_key(key);
 		if (type_of_cheat != NONE) handle_keyword(type_of_cheat);
 	}
-	
-	if (event->modifiers&cmdKey)
-	{
-		process_command_key(key);
-	}
-	else if (!is_keypad(virtual))
+#endif
+
+	if (!is_keypad(virtual))
 	{
 		switch(key)
 		{
 			case '.': case '>': // sound volume up
-				changed_prefs= adjust_sound_volume_up((struct sound_manager_parameters *)&preferences->sound_parameters, _snd_adjust_volume);
+				changed_prefs= adjust_sound_volume_up(sound_preferences, _snd_adjust_volume);
 				break;
 			case ',': case '<': // sound volume down.
-				changed_prefs= adjust_sound_volume_down((struct sound_manager_parameters *)&preferences->sound_parameters, _snd_adjust_volume);
+				changed_prefs= adjust_sound_volume_down(sound_preferences, _snd_adjust_volume);
 				break;
 			case kDELETE: // switch player view
 				walk_player_list();
@@ -699,7 +306,7 @@ static void process_key(
 				zoom_overhead_map_out();
 				break;
 			case '[': case '{':
-				if (game_status == game_in_progress)
+				if(player_controlling_game())
 				{
 					scroll_inventory(-1);
 				}
@@ -709,7 +316,7 @@ static void process_key(
 				}
 				break;
 			case ']': case '}':
-				if (game_status == game_in_progress)
+				if(player_controlling_game())
 				{
 					scroll_inventory(1);
 				}
@@ -719,15 +326,17 @@ static void process_key(
 				}
 				break;
 
+			case '%':
+				toggle_suppression_of_background_tasks();
+				break;
+
 #ifndef FINAL
+#ifdef DEBUG
 			case '!':
-				script_demo();
+				debug_print_weapon_status();
 				break;
 #endif
-
-			case '%':
-				suppress_background_tasks= !suppress_background_tasks;
-				break;
+#endif
 
 			case '?':
 				{
@@ -741,82 +350,91 @@ static void process_key(
 				switch(virtual)
 				{
 					case kcF1:
-						preferences->screen_mode.size = _full_screen;
+						graphics_preferences->screen_mode.size = _full_screen;
 						changed_screen_mode = changed_prefs = TRUE;
 						break;
+
 					case kcF2:
-						preferences->screen_mode.size = _100_percent;
+						if(graphics_preferences->screen_mode.size==_full_screen) update_interface= TRUE;
+						graphics_preferences->screen_mode.size = _100_percent;
 						changed_screen_mode = changed_prefs = TRUE;
 						break;
+
 					case kcF3:
-						preferences->screen_mode.size = _75_percent;
+						if(graphics_preferences->screen_mode.size==_full_screen) update_interface= TRUE;
+						graphics_preferences->screen_mode.size = _75_percent;
 						changed_screen_mode = changed_prefs = TRUE;
 						break;
+
 					case kcF4:
-						preferences->screen_mode.size = _50_percent;
+						if(graphics_preferences->screen_mode.size==_full_screen) update_interface= TRUE;
+						graphics_preferences->screen_mode.size = _50_percent;
 						changed_screen_mode = changed_prefs = TRUE;
 						break;
+
 					case kcF5:
-						if (preferences->screen_mode.acceleration != _valkyrie_acceleration)
+						if (graphics_preferences->screen_mode.acceleration != _valkyrie_acceleration)
 						{
-							preferences->screen_mode.high_resolution = !preferences->screen_mode.high_resolution;
-							if (preferences->screen_mode.high_resolution) preferences->screen_mode.draw_every_other_line= FALSE;
+							graphics_preferences->screen_mode.high_resolution = !graphics_preferences->screen_mode.high_resolution;
+							if (graphics_preferences->screen_mode.high_resolution) graphics_preferences->screen_mode.draw_every_other_line= FALSE;
 							changed_screen_mode = changed_prefs = TRUE;
 						}
 						break;
 #ifdef env68k
 					case kcF6:
-						if (!preferences->screen_mode.high_resolution && preferences->screen_mode.acceleration != _valkyrie_acceleration)
+						if (!graphics_preferences->screen_mode.high_resolution && graphics_preferences->screen_mode.acceleration != _valkyrie_acceleration)
 						{
-							preferences->screen_mode.draw_every_other_line = !preferences->screen_mode.draw_every_other_line;
+							graphics_preferences->screen_mode.draw_every_other_line = !graphics_preferences->screen_mode.draw_every_other_line;
 							changed_screen_mode = changed_prefs = TRUE;
 						}
 						break;
+
 					case kcF7:
-						preferences->screen_mode.texture_floor = !preferences->screen_mode.texture_floor;
+						graphics_preferences->screen_mode.texture_floor = !graphics_preferences->screen_mode.texture_floor;
 						changed_screen_mode = changed_prefs = TRUE;
 						break;
+
 					case kcF8:
-						preferences->screen_mode.texture_ceiling = !preferences->screen_mode.texture_ceiling;
+						graphics_preferences->screen_mode.texture_ceiling = !graphics_preferences->screen_mode.texture_ceiling;
 						changed_screen_mode = changed_prefs = TRUE;
 						break;
 #endif
-#if 0 /* can’t start music during network game; quicktime is too slow */
 					case kcF9:
-						if (can_play_background_music())
+						if(event->modifiers & shiftKey)
 						{
-							preferences->background_music_on = !preferences->background_music_on;
-							changed_prefs= TRUE;
-							if (preferences->background_music_on)
-							{
-								start_background_music(static_world->song_index);
-							}
-							else
-							{
-								stop_background_music();
-							}
+							short keys[NUMBER_OF_KEYS];
+				
+							set_default_keys(&keys, 0);
+							set_keys(&keys);
 						}
 						break;
-#endif
+						
+					case kcF10:
+						break;
+						
 					case kcF11:
-						if (preferences->screen_mode.gamma_level)
+						if (graphics_preferences->screen_mode.gamma_level)
 						{
-							preferences->screen_mode.gamma_level-= 1;
-							change_gamma_level(preferences->screen_mode.gamma_level);
+							graphics_preferences->screen_mode.gamma_level-= 1;
+							change_gamma_level(graphics_preferences->screen_mode.gamma_level);
 							changed_prefs= TRUE;
 						}
 						break;
+						
 					case kcF12:
-						if (preferences->screen_mode.gamma_level<NUMBER_OF_GAMMA_LEVELS-1)
+						if (graphics_preferences->screen_mode.gamma_level<NUMBER_OF_GAMMA_LEVELS-1)
 						{
-							preferences->screen_mode.gamma_level+= 1;
-							change_gamma_level(preferences->screen_mode.gamma_level);
+							graphics_preferences->screen_mode.gamma_level+= 1;
+							change_gamma_level(graphics_preferences->screen_mode.gamma_level);
 							changed_prefs= TRUE;
 						}
 						break;
+						
 					default:
-						if (get_game_status() == demo_in_progress)
-							set_game_status(user_wants_quit_from_demo);
+						if(get_game_controller()==_demo)
+						{
+							set_game_state(_close_game);
+						}
 						break;
 				}
 				break;
@@ -825,150 +443,14 @@ static void process_key(
 
 	if (changed_screen_mode)
 	{
-		change_screen_mode(&preferences->screen_mode, TRUE);
-		draw_interface();
+		change_screen_mode(&graphics_preferences->screen_mode, TRUE);
 		render_screen(0);
+		if(update_interface) draw_interface();
 	}
-	if (changed_prefs) write_preferences_file(preferences);
+	if (changed_prefs) write_preferences();
 	
 	return;
 }
-
-static process_command_key(short key)
-{
-	short i;
-	short command_key_tag = NONE;
-	
-	for (i = 0; i < NUMBER_OF_COMMAND_KEYS; i++)
-	{
-		if (key == command_keys[i].command_key)
-		{
-			command_key_tag = command_keys[i].tag;
-			break;
-		}
-	}
-	
-	switch (command_key_tag)
-	{
-		boolean really_wants_to_quit = FALSE;
-		
-		case _command_key_close: /* CMD-Q; quit */
-		case _command_key_quit: /* CMD-W; close current game */
-			if (get_game_status() != demo_in_progress && get_game_status() != replay_in_progress)
-			{
-				if (game_is_networked || PLAYER_IS_DEAD(local_player) ||
-					dynamic_world->tick_count-local_player->ticks_at_last_successful_save<CLOSE_WITHOUT_WARNING_DELAY)
-				{
-					really_wants_to_quit= TRUE;
-				}
-				else
-				{
-					pause_game();
-					ShowCursor();
-					really_wants_to_quit= quit_without_saving();
-					HideCursor();
-					resume_game();
-				}
-			}
-			else
-			{
-				really_wants_to_quit = TRUE;
-			}
-			if (really_wants_to_quit == TRUE)
-			{
-				render_screen(0); // get rid of hole made by alert
-				switch(get_game_status())
-				{
-					case game_in_progress:
-						set_game_status(user_wants_quit_from_game);
-						break;
-					case replay_in_progress:
-						set_game_status(user_wants_quit_from_replay);
-						break;
-					case demo_in_progress:
-						set_game_status(user_wants_quit_from_demo);
-						break;					
-				}
-			}
-			break;
-#if 0
-		case _command_key_save: /* save game */
-			if (get_game_status() != demo_in_progress)
-			{
-				if (get_game_status() == game_in_progress && !game_is_networked)
-				{
-					save_game();
-					validate_world_window();
-				}
-			}
-			else
-			{
-				set_game_status(user_wants_quit_from_demo);
-			}
-			break;
-#endif
-		case _command_key_pause:
-			if (!game_is_networked)
-			{
-				if (game_status != demo_in_progress)
-				{
-					if (get_keyboard_controller_status() == TRUE)
-					{
-						pause_game();
-					}
-					else
-					{
-						resume_game();
-					}
-				}
-				else
-				{
-					set_game_status(user_wants_quit_from_demo);
-				}
-			}
-			break;
-
-		case _command_key_revert: // not yet implemented
-		default:
-			if (get_game_status() == demo_in_progress)
-				set_game_status(user_wants_quit_from_demo);
-			break;
-	}
-}
-
-static short process_keyword_key(
-	char key)
-{
-	short i;
-	short tag = NONE;
-
-	if (iscntrl(key))
-	{
-		/* copy the buffer down and insert the new character */
-		for (i=0;i<MAXIMUM_KEYWORD_LENGTH-1;++i)
-		{
-			keyword_buffer[i]= keyword_buffer[i+1];
-		}
-		keyword_buffer[MAXIMUM_KEYWORD_LENGTH-1]= key+'A'-1;
-		keyword_buffer[MAXIMUM_KEYWORD_LENGTH]= 0;
-		
-		/* any matches? */
-		for (i=0;i<NUMBER_OF_KEYWORDS;++i)
-		{
-			if (!strcmp(keywords[i].keyword, keyword_buffer+MAXIMUM_KEYWORD_LENGTH-strlen(keywords[i].keyword)))
-			{
-				/* wipe the buffer if we have a match */
-				memset(keyword_buffer, 0, MAXIMUM_KEYWORD_LENGTH);
-				
-				/* and return the tag */
-				tag = keywords[i].tag;
-			}
-		}
-	}
-	
-	return tag;
-}
-
 
 static void verify_environment(
 	void)
@@ -977,7 +459,7 @@ static void verify_environment(
 	OSErr result;
 
 	result= SysEnvirons(curSysEnvVers, &environment);
-	if (result!=noErr||environment.systemVersion<0x0605)
+	if (result!=noErr||environment.systemVersion<0x0700)
 	{
 		alert_user(fatalError, strERRORS, badSystem, environment.systemVersion);
 	}
@@ -987,12 +469,12 @@ static void verify_environment(
 		alert_user(fatalError, strERRORS, badQuickDraw, 0);
 	}
 	
-	if (!environment.processor&&environment.processor<env68020)
+	if (!environment.processor&&environment.processor<env68040)
 	{
 		alert_user(fatalError, strERRORS, badProcessor, environment.processor);
 	}
 	
-	if (FreeMem()<1900000)
+	if (FreeMem()<2900000)
 	{
 		alert_user(fatalError, strERRORS, badMemory, FreeMem());
 	}
@@ -1000,17 +482,8 @@ static void verify_environment(
 	return;
 }
 
-void set_game_status(short status)
-{
-	game_status = status;
-}
-
-short get_game_status(void)
-{
-	return game_status;
-}
-
-void handle_high_level_event(EventRecord *event)
+static void handle_high_level_event(
+	EventRecord *event)
 {
 	if(system_information->has_apple_events)
 	{
@@ -1018,111 +491,128 @@ void handle_high_level_event(EventRecord *event)
 	}
 }
 
-static void initialize_core_events(void)
+static void initialize_core_events(
+	void)
 {
-	/* Allocate the system information structure.. */	
-	system_information= (struct system_information_data *) 
-		NewPtr(sizeof(struct system_information_data));
-	assert(system_information);
-
-	if(has_system_seven())
+	if(system_information->has_seven && system_information->has_apple_events)
 	{
 		AEEventHandlerUPP open_document_proc;
 		AEEventHandlerUPP quit_application_proc;
 		AEEventHandlerUPP print_document_proc;
 		AEEventHandlerUPP open_application_proc;
 		OSErr err;
-		long apple_events_present;
 
-		err= Gestalt(gestaltAppleEventsAttr, &apple_events_present);
-		if(!err && (apple_events_present & 1<<gestaltAppleEventsPresent))
-		{
-			open_document_proc= NewAEEventHandlerProc(handle_open_document);
-			quit_application_proc= NewAEEventHandlerProc(handle_quit_application);
-			print_document_proc= NewAEEventHandlerProc(handle_print_document);
-			open_application_proc= NewAEEventHandlerProc(handle_open_application);
-			assert(open_document_proc && quit_application_proc 
-				&& print_document_proc && open_application_proc);
+		open_document_proc= NewAEEventHandlerProc(handle_open_document);
+		quit_application_proc= NewAEEventHandlerProc(handle_quit_application);
+		print_document_proc= NewAEEventHandlerProc(handle_print_document);
+		open_application_proc= NewAEEventHandlerProc(handle_open_application);
+		assert(open_document_proc && quit_application_proc 
+			&& print_document_proc && open_application_proc);
+	
+		err= AEInstallEventHandler(kCoreEventClass, kAEOpenDocuments, open_document_proc, 0,
+			FALSE);
+		assert(!err);
 		
-			err= AEInstallEventHandler(kCoreEventClass, kAEOpenDocuments, open_document_proc, 0,
-				FALSE);
-			assert(!err);
-			
-			err= AEInstallEventHandler(kCoreEventClass, kAEQuitApplication, quit_application_proc, 0,
-				FALSE);
-			assert(!err);
-		
-			err= AEInstallEventHandler(kCoreEventClass, kAEPrintDocuments, print_document_proc, 0,
-				FALSE);
-			assert(!err);
-		
-			err= AEInstallEventHandler(kCoreEventClass, kAEOpenApplication, open_application_proc, 0,
-				FALSE);
-			assert(!err);
-
-			system_information->has_apple_events= TRUE;
-		} else {
-			system_information->has_apple_events= FALSE;
-		}
-		system_information->has_seven= TRUE;
-		set_to_default_map(); // in case start of game comes before high-level event
-	} else {
-		/* Sorry, you can only play with the default map. You lose */
-		set_to_default_map();
-		system_information->has_seven= FALSE;
-		system_information->has_apple_events= FALSE;
+		err= AEInstallEventHandler(kCoreEventClass, kAEQuitApplication, quit_application_proc, 0,
+			FALSE);
+		assert(!err);
+	
+		err= AEInstallEventHandler(kCoreEventClass, kAEPrintDocuments, print_document_proc, 0,
+			FALSE);
+		assert(!err);
+	
+		err= AEInstallEventHandler(kCoreEventClass, kAEOpenApplication, open_application_proc, 0,
+			FALSE);
+		assert(!err);
 	}
 }
 
-static pascal OSErr handle_open_document(AppleEvent *event, AppleEvent *reply, long myRefCon)
+static pascal OSErr handle_open_document(
+	AppleEvent *event, 
+	AppleEvent *reply, 
+	long myRefCon)
 {
 	OSErr err;
 	AEDescList docList;
-	FSSpec myFSS;
-	long itemsInList;
-	AEKeyword	theKeyword;
-	DescType typeCode;
-	Size actualSize;
-	long i;
-	FInfo	theFInfo;
-	char name[65];
-	boolean map_set= FALSE;
 
 #pragma unused (reply, myRefCon)	
-	err=AEGetParamDesc(event, keyDirectObject, typeAEList, &docList);
-	if(err) return err;
-	
-	err=required_appleevent_check(event);
-	if(err) return err;
-
-#ifndef FINAL	
-	err=AECountItems(&docList, &itemsInList);
-	if(err) return err;
-	
-	for(i=1; i<=itemsInList; i++) 
+	err= AEGetParamDesc(event, keyDirectObject, typeAEList, &docList);
+	if(!err)
 	{
-		err=AEGetNthPtr(&docList, i, typeFSS, &theKeyword, &typeCode, 
-			(Ptr) &myFSS, sizeof(FSSpec), &actualSize);
-		if(err) return err;
-		
-		FSpGetFInfo(&myFSS, &theFInfo);
-		if(theFInfo.fdType==SCENARIO_FILE_TYPE)
+		err= required_appleevent_check(event);
+		if(!err)
 		{
-			BlockMove(myFSS.name, name, myFSS.name[0]+1);
-			p2cstr(name);
-			set_map_file(myFSS.vRefNum, myFSS.parID, name);
-			map_set= TRUE;
+			long itemsInList;
+		
+			err= AECountItems(&docList, &itemsInList);
+
+			if(!err)
+			{
+				boolean done= FALSE;
+				long index;
+				FSSpec myFSS;
+				Size actualSize;
+
+				for(index= 1; !done && index<= itemsInList; index++) 
+				{
+					DescType typeCode;
+					AEKeyword theKeyword;
+
+					err=AEGetNthPtr(&docList, index, typeFSS, &theKeyword, &typeCode, 
+						(Ptr) &myFSS, sizeof(FSSpec), &actualSize);
+					if(!err)
+					{
+						FInfo theFInfo;
+
+						FSpGetFInfo(&myFSS, &theFInfo);
+						switch(theFInfo.fdType)
+						{
+							case SCENARIO_FILE_TYPE:
+								set_map_file((FileDesc *) &myFSS);
+								break;
+								
+							case SAVE_GAME_TYPE:
+								if(load_and_start_game((FileDesc *) &myFSS))
+								{
+									done= TRUE;
+								}
+								break;
+								
+							case FILM_FILE_TYPE:
+								if(handle_open_replay((FileDesc *) &myFSS))
+								{
+									done= TRUE;
+								}
+								break;
+								
+							case PHYSICS_FILE_TYPE:
+								set_physics_file((FileDesc *) &myFSS);
+								break;
+								
+							case SHAPES_FILE_TYPE:
+								open_shapes_file(&myFSS);
+								break;
+								
+							case SOUNDS_FILE_TYPE:
+						 		open_sound_file(&myFSS);
+								break;
+								
+							default:
+								break;
+						}
+					}
+				}
+			}
 		}
 	}
-
-	/* Default to the proper map. */	
-	if(!map_set) set_to_default_map();
-#endif
 	
-	return noErr;
+	return err;
 }
 
-static pascal OSErr handle_quit_application(AppleEvent *event, AppleEvent *reply, long myRefCon)
+static pascal OSErr handle_quit_application(
+	AppleEvent *event, 
+	AppleEvent *reply, 
+	long myRefCon)
 {
 #pragma unused(reply, myRefCon)
 	OSErr err;
@@ -1130,20 +620,23 @@ static pascal OSErr handle_quit_application(AppleEvent *event, AppleEvent *reply
 	err= required_appleevent_check(event);
 	if(err) return err;
 	
-	exit(0);
+	set_game_state(_quit_game);
 }
 
-static pascal OSErr handle_print_document(AppleEvent *event, AppleEvent *reply, long myRefCon)
+static pascal OSErr handle_print_document(
+	AppleEvent *event, 
+	AppleEvent *reply, 
+	long myRefCon)
 {
 	#pragma unused(event, reply, myRefCon)
 
-	/* Default to the proper map. */	
-	set_to_default_map();
-	
 	return (errAEEventNotHandled);
 }
 
-static pascal OSErr handle_open_application(AppleEvent *event, AppleEvent *reply, long myRefCon)
+static pascal OSErr handle_open_application(
+	AppleEvent *event, 
+	AppleEvent *reply, 
+	long myRefCon)
 {
 #pragma unused(reply, myRefCon)
 	OSErr	err;
@@ -1151,12 +644,11 @@ static pascal OSErr handle_open_application(AppleEvent *event, AppleEvent *reply
 	err=required_appleevent_check(event);
 	if(err) return err;
 
-	/* Default map anyone? */
-	set_to_default_map();
 	return err;
 }
 
-static OSErr required_appleevent_check(AppleEvent *event)
+static OSErr required_appleevent_check(
+	AppleEvent *event)
 {
 	OSErr err;
 	DescType typeCode;
@@ -1171,32 +663,47 @@ static OSErr required_appleevent_check(AppleEvent *event)
 	return err;
 }
 
-static boolean has_system_seven(
+static void initialize_system_information(
 	void)
 {
-	long sysVersion;
+	long system_version, apple_events_present, processor_type;
 	OSErr err;
+	
+	/* Allocate the system information structure.. */	
+	system_information= (struct system_information_data *) 
+		NewPtr(sizeof(struct system_information_data));
+	assert(system_information);
 
-	err= Gestalt(gestaltSystemVersion, &sysVersion);
+	/* System Version */
+	system_information->has_seven= FALSE;
+	err= Gestalt(gestaltSystemVersion, &system_version);
 	if (!err)
 	{
-		if(sysVersion>=0x0700) return TRUE;
+		if(system_version>=0x0700) system_information->has_seven= TRUE;;
 	}
-	
-	return FALSE;
-}
 
-static void get_machine_type(
-	boolean *machine_is_68k,
-	boolean *machine_is_68040,
-	boolean *machine_is_ppc)
-{
-	long processor_type;
-	OSErr error;
-	
-	error = Gestalt(gestaltNativeCPUtype, &processor_type);
+	system_information->machine_has_network_memory= (FreeMem()>5000000) ? TRUE : FALSE;
 
-	if (error == noErr)
+	/* Appleevents? */
+	err= Gestalt(gestaltAppleEventsAttr, &apple_events_present);
+	if(!err && (apple_events_present & 1<<gestaltAppleEventsPresent))
+	{
+		system_information->has_apple_events= TRUE;
+	} else {
+		system_information->has_apple_events= FALSE;
+	}
+
+	/* Is appletalk available? */
+	if(system_information->has_seven && NetDDPOpen()==noErr && FreeMem()>kMINIMUM_NETWORK_HEAP)
+	{
+		system_information->appletalk_is_available= TRUE;
+	} else {
+		system_information->appletalk_is_available= FALSE;
+	}
+
+	/* Type of machine? */
+	err= Gestalt(gestaltNativeCPUtype, &processor_type);
+	if(!err)
 	{
 		switch (processor_type)
 		{
@@ -1204,52 +711,205 @@ static void get_machine_type(
 			case gestaltCPU68010: // highly unlikely, wouldn't you say?
 			case gestaltCPU68020:
 			case gestaltCPU68030:
-				*machine_is_68k = TRUE; *machine_is_68040 = FALSE; *machine_is_ppc = FALSE;
+				system_information->machine_is_68k= TRUE; 
+				system_information->machine_is_68040= FALSE; 
+				system_information->machine_is_ppc= FALSE;
 				break;
-			case gestalt68040: // ick.
+				
 			case gestaltCPU68040:
-				*machine_is_68k = TRUE; *machine_is_68040 = TRUE; *machine_is_ppc = FALSE;
+				system_information->machine_is_68k= TRUE; 
+				system_information->machine_is_68040= TRUE; 
+				system_information->machine_is_ppc= FALSE;
 				break;
+				
 			case gestaltCPU601:
 			case gestaltCPU603:
 			case gestaltCPU604:
-				*machine_is_68k = FALSE; *machine_is_68040 = FALSE; *machine_is_ppc = TRUE;
-				break;
-			default: // assume the best, since no other low-end processors are likely to come out for macs
-				*machine_is_68k = FALSE; *machine_is_68040 = FALSE; *machine_is_ppc = TRUE;
+			default: // assume the best
+				system_information->machine_is_68k= FALSE; 
+				system_information->machine_is_68040= FALSE; 
+				system_information->machine_is_ppc= TRUE;
 				break;
 		}
 	}
 	else // handle sys 6 machines, which are certainly not ppcs. (can they even be '040s?)
 	{
-		*machine_is_68k = TRUE;
-		*machine_is_ppc = FALSE;
+		system_information->machine_is_68k= TRUE; 
+		system_information->machine_is_ppc= FALSE;
 
-		error = Gestalt(gestaltProcessorType, &processor_type);
-		if (error == noErr && processor_type == gestalt68040)
-			*machine_is_68040 = TRUE;
-		else
-			*machine_is_68040 = FALSE;
+		err= Gestalt(gestaltProcessorType, &processor_type);
+		if(!err)
+		{
+			if(processor_type==gestalt68040)
+			{
+				system_information->machine_is_68040= TRUE; 
+			} else {
+				system_information->machine_is_68040= FALSE; 
+			}
+		}
 	}
 	
 	return;
-
 }
 
-boolean game_window_renders_compass(void)
+boolean is_keypad(
+	short keycode)
 {
-	return preferences->render_compass;
+	return keycode >= 0x41 && keycode <= 0x5c;
 }
 
-#include "items.h"
+boolean networking_available(
+	void)
+{
+	return system_information->appletalk_is_available;
+}
 
-void handle_keyword(
+/* ---------- dialog headers */
+
+#define DIALOG_HEADER_RESOURCE_OFFSET 8000
+#define DIALOG_HEADER_VERTICAL_INSET 10
+#define DIALOG_HEADER_HORIZONTAL_INSET 13
+
+/* if this dialog has a known refCon, draw the appropriate header graphic */
+static void marathon_dialog_header_proc(
+	DialogPtr dialog,
+	Rect *frame)
+{
+	long refCon= GetWRefCon(dialog);
+	
+	if (refCon>=FIRST_DIALOG_REFCON && refCon<=LAST_DIALOG_REFCON)
+	{
+		PicHandle picture= GetPicture(DIALOG_HEADER_RESOURCE_OFFSET - FIRST_DIALOG_REFCON + refCon);
+		
+		if (picture)
+		{
+			Rect destination= (*picture)->picFrame;
+			
+			OffsetRect(&destination, frame->left-destination.left+DIALOG_HEADER_HORIZONTAL_INSET,
+				frame->top-destination.top+DIALOG_HEADER_VERTICAL_INSET);
+			DrawPicture(picture, &destination);
+		}
+	}
+		
+	return;
+}
+
+static void initialize_marathon_music_handler(
+	void)
+{
+	FSSpec music_file_spec;
+	OSErr error;
+	boolean initialized= FALSE;
+	
+	error= get_file_spec(&music_file_spec, strFILENAMES, filenameMUSIC, strPATHS);
+	if (!error)
+	{
+		boolean is_folder, was_aliased;
+	
+		ResolveAliasFile(&music_file_spec, TRUE, &is_folder, &was_aliased);
+		initialized= initialize_music_handler((FileDesc *) &music_file_spec);
+	}
+	
+	return;
+}
+
+/* ------------------------- cheating (not around if FINAL is defined) */
+#ifndef FINAL
+
+#define MAXIMUM_KEYWORD_LENGTH 20
+#define NUMBER_OF_KEYWORDS (sizeof(keywords)/sizeof(struct keyword_data))
+
+enum // cheat tags
+{
+	_tag_health,
+	_tag_oxygen,
+	_tag_map,
+	_tag_fusion,
+	_tag_invincible,
+	_tag_invisible,
+	_tag_extravision,
+	_tag_infravision,
+	_tag_pistol,
+	_tag_rifle,
+	_tag_missle,
+	_tag_toaster,  // flame-thrower
+	_tag_pzbxay,
+	_tag_ammo,
+	_tag_pathways,
+	_tag_view,
+	_tag_jump,
+	_tag_aslag,
+	_tag_save
+};
+
+/* ---------- resources */
+
+/* ---------- structures */
+struct keyword_data
+{
+	short tag;
+	char *keyword; /* in uppercase */
+};
+
+/* ---------- globals */
+static struct keyword_data keywords[]=
+{
+	{_tag_health, "NRG"},
+	{_tag_oxygen, "OTWO"},
+	{_tag_map, "MAP"},
+	{_tag_invisible, "BYE"},
+	{_tag_invincible, "NUKE"},
+	{_tag_infravision, "SEE"},
+	{_tag_extravision, "WOW"},
+	{_tag_invisible, "BYE"},
+	{_tag_pistol, "MAG"},
+	{_tag_rifle, "RIF"},
+	{_tag_missle, "POW"},
+	{_tag_toaster, "TOAST"},
+	{_tag_fusion, "MELT"},
+	{_tag_pzbxay, "PZBXAY"}, // the alien shotgon, in the phfor's language
+	{_tag_ammo, "AMMO"},
+	{_tag_jump, "QWE"},
+	{_tag_aslag, "SHIT"},
+	{_tag_save, "YOURMOM"}
+};
+static char keyword_buffer[MAXIMUM_KEYWORD_LENGTH+1];
+
+
+static short process_keyword_key(
+	char key)
+{
+	short i;
+	short tag = NONE;
+
+	/* copy the buffer down and insert the new character */
+	for (i=0;i<MAXIMUM_KEYWORD_LENGTH-1;++i)
+	{
+		keyword_buffer[i]= keyword_buffer[i+1];
+	}
+	keyword_buffer[MAXIMUM_KEYWORD_LENGTH-1]= key+'A'-1;
+	keyword_buffer[MAXIMUM_KEYWORD_LENGTH]= 0;
+	
+	/* any matches? */
+	for (i=0; i<NUMBER_OF_KEYWORDS; ++i)
+	{
+		if (!strcmp(keywords[i].keyword, keyword_buffer+MAXIMUM_KEYWORD_LENGTH-strlen(keywords[i].keyword)))
+		{
+			/* wipe the buffer if we have a match */
+			memset(keyword_buffer, 0, MAXIMUM_KEYWORD_LENGTH);
+			tag= keywords[i].tag;
+			break;
+		}
+	}
+	
+	return tag;
+}
+
+static void handle_keyword(
 	short tag)
 {
 	boolean cheated= TRUE;
 
-#if 0
-#ifndef FINAL	
 	switch (tag)
 	{
 		case _tag_health:
@@ -1289,86 +949,79 @@ void handle_keyword(
 		case _tag_extravision:
 			process_player_powerup(local_player_index, _i_extravision_powerup);
 			break;
-		case _tag_pistol:
-			if (local_player->items[_i_magnum]<=1) new_item((world_point2d *) &local_player->location, _i_magnum, local_player->supporting_polygon_index);
-			break;
-		case _tag_rifle:
-			if (local_player->items[_i_assault_rifle]<1) new_item((world_point2d *) &local_player->location, _i_assault_rifle, local_player->supporting_polygon_index);
-			break;
-		case _tag_missle:
-			if (local_player->items[_i_missile_launcher]<1) new_item((world_point2d *) &local_player->location, _i_missile_launcher, local_player->supporting_polygon_index);
-			break;
-		case _tag_toaster:
-			if (local_player->items[_i_flamethrower]<1) new_item((world_point2d *) &local_player->location, _i_flamethrower, local_player->supporting_polygon_index);
-			break;
-		case _tag_pzbxay:
-			if (local_player->items[_i_alien_shotgun]<1) new_item((world_point2d *) &local_player->location, _i_alien_shotgun, local_player->supporting_polygon_index);
-			break;
-		case _tag_fusion:
-			if (local_player->items[_i_plasma_pistol]<1) new_item((world_point2d *) &local_player->location, _i_plasma_pistol, local_player->supporting_polygon_index);
-			break;
-		case _tag_ammo:
-			local_player->items[_i_assault_rifle_magazine]= 10;
-			local_player->items[_i_assault_grenade_magazine]= 10;
-			local_player->items[_i_magnum_magazine]= 10;
-			local_player->items[_i_missile_launcher_magazine]= 10;
-			local_player->items[_i_flamethrower_canister]= 10;
-			local_player->items[_i_plasma_magazine]= 10;
-#if 0
-			local_player->items[_i_assult_rifle_magazine]= 10;
-			local_player->items[_i_assult_rifle_magazine]= 10;
-			if (local_player->items[_i_magnum] > 0 && local_player->items[_i_magnum_magazine] < 10)
-				new_item((world_point2d *) &local_player->location, _i_magnum_magazine, local_player->supporting_polygon_index);
-			if (local_player->items[_i_assault_rifle] > 0 && local_player->items[_i_assault_rifle_magazine] < 10)
-				new_item((world_point2d *) &local_player->location, _i_assault_rifle_magazine, local_player->supporting_polygon_index);
-			if (local_player->items[_i_assault_rifle] > 0 && local_player->items[_i_assault_grenade_magazine] < 10)
-				new_item((world_point2d *) &local_player->location, _i_assault_grenade_magazine, local_player->supporting_polygon_index);
-			if (local_player->items[_i_missile_launcher] > 0 && local_player->items[_i_missile_launcher_magazine] < 10)
-				new_item((world_point2d *) &local_player->location, _i_missile_launcher_magazine, local_player->supporting_polygon_index);
-			if (local_player->items[_i_flamethrower] > 0 && local_player->items[_i_flamethrower_canister] < 10)
-				new_item((world_point2d *) &local_player->location, _i_flamethrower_canister, local_player->supporting_polygon_index);
-			if (local_player->items[_i_alien_shotgun] > 0&& local_player->items[_i_alien_shotgun_magazine] < 10)
-				new_item((world_point2d *) &local_player->location, _i_alien_shotgun_magazine, local_player->supporting_polygon_index);
-			if (local_player->items[_i_plasma_pistol] > 0&& local_player->items[_i_plasma_magazine] < 10)
-				new_item((world_point2d *) &local_player->location, _i_plasma_magazine, local_player->supporting_polygon_index);
-#endif
-			break;
-		case _tag_pathways:
-			static_world->physics_model= _editor_model;
-			break;
 		case _tag_jump:
 			accelerate_monster(local_player->monster_index, WORLD_ONE/10, 0, 0);
 			break;
+		case _tag_pistol:
+			local_player->items[_i_magnum_magazine]= 10;
+			break;
+		case _tag_rifle:
+			local_player->items[_i_assault_rifle]= 1;
+			local_player->items[_i_assault_rifle_magazine]= 10;
+			local_player->items[_i_assault_grenade_magazine]= 8;
+			break;
+		case _tag_fusion:
+			local_player->items[_i_plasma_pistol]= 1;
+			local_player->items[_i_plasma_magazine]= 10;
+			break;
 		case _tag_save:
 			save_game();
+			break;
 		case _tag_aslag:
-			if (local_player->items[_i_assault_rifle] < 1)
-				new_item((world_point2d *) &local_player->location, _i_assault_rifle, local_player->supporting_polygon_index);
-			if (local_player->items[_i_missile_launcher] < 1)
-				new_item((world_point2d *) &local_player->location, _i_missile_launcher, local_player->supporting_polygon_index);
-			new_item((world_point2d *) &local_player->location, _i_missile_launcher_magazine, local_player->supporting_polygon_index);
-			if (local_player->items[_i_assault_rifle_magazine] < 8)
 			{
-				new_item((world_point2d *) &local_player->location, _i_assault_rifle_magazine, local_player->supporting_polygon_index);
-				new_item((world_point2d *) &local_player->location, _i_assault_rifle_magazine, local_player->supporting_polygon_index);
-				new_item((world_point2d *) &local_player->location, _i_assault_rifle_magazine, local_player->supporting_polygon_index);
-			}
-			if (local_player->items[_i_assault_grenade_magazine] < 8)
-			{
-				new_item((world_point2d *) &local_player->location, _i_assault_grenade_magazine, local_player->supporting_polygon_index);
-				new_item((world_point2d *) &local_player->location, _i_assault_grenade_magazine, local_player->supporting_polygon_index);
-				new_item((world_point2d *) &local_player->location, _i_assault_grenade_magazine, local_player->supporting_polygon_index);
+				short items[]= { _i_assault_rifle, _i_magnum, _i_missile_launcher, _i_flamethrower,
+					_i_plasma_pistol, _i_alien_shotgun, _i_shotgun,
+					_i_assault_rifle_magazine, _i_assault_grenade_magazine, 
+					_i_magnum_magazine, _i_missile_launcher_magazine, _i_flamethrower_canister,
+					_i_plasma_magazine, _i_shotgun_magazine, _i_shotgun };
+				short index;
+				
+				for(index= 0; index<sizeof(items)/sizeof(short); ++index)
+				{
+					switch(get_item_kind(items[index]))
+					{
+						case _weapon:
+							if(items[index]==_i_shotgun || items[index]==_i_magnum)
+							{
+								assert(items[index]>=0 && items[index]<NUMBER_OF_ITEMS);
+								if(local_player->items[items[index]]==NONE)
+								{
+									local_player->items[items[index]]= 1;
+								} else {
+									local_player->items[items[index]]++;
+								}
+							} else {	
+								local_player->items[items[index]]= 1;
+							}
+							break;
+							
+						case _ammunition:
+							local_player->items[items[index]]= 10;
+							break;
+							
+						case _powerup:
+						case _weapon_powerup:
+							break;
+							
+						default:
+							halt();
+							break;
+					} 
+					process_new_item_for_reloading(local_player_index, items[index]);
+				}
 			}
 			local_player->suit_energy = 3*PLAYER_MAXIMUM_SUIT_ENERGY;
 			update_interface(NONE);
 			break;
+			
 		default:
 			cheated= FALSE;
+			break;
 	}
 
 //	/* can’t use computer terminals or save in the final version if we’ve cheated */
 //	if (cheated) SET_PLAYER_HAS_CHEATED(local_player);
-#ifndef env68k
+#if 0
 	if (cheated)
 	{
 		long final_ticks;
@@ -1381,132 +1034,194 @@ void handle_keyword(
 		play_local_sound(20110);
 	}
 #endif
+	
+	return;
+}
 #endif
-#endif
-	
-	return;
-}
 
-boolean is_keypad(
-	short keycode)
-{
-	return keycode >= 0x41 && keycode <= 0x5c;
-}
-
-static void setup_command_keys(
+static void main_event_loop(
 	void)
 {
-	short       i;
-	short       command_key;
-	MenuHandle  game_menu;
+	wait_for_highlevel_event();
 	
-	game_menu = GetMenu(menuGAME);
-	assert(game_menu);
-
-	assert(CountMItems(game_menu) >= NUMBER_OF_COMMAND_KEYS);
-	for (i = 0; i < NUMBER_OF_COMMAND_KEYS; i++)
+	while(get_game_state()!=_quit_game)
 	{
-		GetItemCmd(game_menu, i+1, &command_key);
-		command_keys[i].command_key = toupper(command_key);
-	}
-	
-	DeleteMenu(menuGAME);
-	ReleaseResource((Handle) game_menu);
-	
-	return;
-}
-
-/* stolen from game_wad.c */
-void pause_game(
-	void)
-{
-	stop_fade();
-	darken_world_window();
-	pause_keyboard_controller(FALSE);
-	
-	return;
-}
-
-/* stolen from game_wad.c */
-void resume_game(
-	void)
-{
-//	GrafPtr old_port;
-	
-//	GetPort(&old_port);
-//	SetPort(screen_window);
-//	ValidRect(&screen_window->portRect);
-//	SetPort(old_port);
-
-	validate_world_window();
-	pause_keyboard_controller(TRUE);
-	
-	return;
-}
-
-static void script_demo(
-	void)
-{
-	DialogPtr dialog= myGetNewDialog(132, NULL, (WindowPtr) -1, 0);
-	short item_hit, number= NONE;
-	short state= 0;
-	
-	assert(dialog);
-	modify_control(dialog, 4+state, CONTROL_ACTIVE, TRUE);
-	do
-	{
-		ModalDialog(get_general_filter_upp(), &item_hit);
-		switch (item_hit)
+		boolean use_waitnext;
+		
+		if(try_for_event(&use_waitnext))
 		{
-			case 4: case 5: case 6:
-				modify_radio_button_family(dialog, 4, 6, 4+state);
-				state= item_hit-4;
-				break;
+			EventRecord event;
+			boolean got_event= FALSE;
+		
+			if(use_waitnext)
+			{
+				got_event= WaitNextEvent(everyEvent, &event, 2, (RgnHandle) NULL);
+			}
+			else
+			{
+				got_event= GetOSEvent(everyEvent, &event);
+			}
+			
+			if(got_event) process_event(&event);
+			
+			if(get_game_state()==_game_in_progress) 
+			{
+				FlushEvents(keyDownMask|keyUpMask|autoKeyMask, 0);
+			}
+		}
+
+		idle_game_state();
+	}
+
+	/* Flush all events on quit.. */
+	FlushEvents(everyEvent, 0);
+}
+
+/* ------------- private code */
+static void wait_for_highlevel_event(
+	void)
+{
+	EventRecord event;
+	boolean done= FALSE;
+	
+	while(!done)
+	{
+		if(WaitNextEvent(highLevelEventMask, &event, 0, NULL))
+		{
+			process_event(&event);
+			done= TRUE;
 		}
 	}
-	while (item_hit!=iOK && item_hit!=iCANCEL);
-	
-	if (item_hit==iOK)
+
+	return;
+}
+
+/* Can't be static because the general_filter_proc calls this */
+void update_any_window(
+	WindowPtr window,
+	EventRecord *event)
+{
+	GrafPtr old_port;
+
+	GetPort(&old_port);
+	SetPort(window);
+	BeginUpdate(window);
+
+	if(window==screen_window)
 	{
-		number= extract_number_from_text_item(dialog, 3);
-		if (!GetResource('levl', number+1000)) number= NONE;
+		update_game_window(window, event);
 	}
-	DisposeDialog(dialog);
-	present_computer_interface(number, state);
+	EndUpdate(window);
+	SetPort(old_port);
 	
 	return;
 }
 
-/* ---------- dialog headers */
-
-#define FIRST_HEADER_SHAPE 13
-#define DIALOG_HEADER_VERTICAL_INSET 10
-#define DIALOG_HEADER_HORIZONTAL_INSET 13
-
-/* if this dialog has a known refCon, draw the appropriate header graphic */
-static void marathon_dialog_header_proc(
-	DialogPtr dialog,
-	Rect *frame)
+/* Can't be static because the general_filter_proc calls this */
+void activate_any_window(
+	WindowPtr window,
+	EventRecord *event,
+	boolean active)
 {
-	long refCon= GetWRefCon(dialog);
-	
-	if (refCon>=FIRST_DIALOG_REFCON&&refCon<=LAST_DIALOG_REFCON)
+	if(window==screen_window)
 	{
-		PixMapHandle pixmap= get_shape_pixmap(BUILD_DESCRIPTOR(_collection_splash_graphics, FIRST_HEADER_SHAPE+refCon-FIRST_DIALOG_REFCON), FALSE);
-		Rect destination= (*pixmap)->bounds;
-		RGBColor old_forecolor, old_backcolor;
+		activate_screen_window(window, event, active);
+	}
+	
+	return;
+}
+
+static void process_event(
+	EventRecord *event)
+{
+	WindowPtr window;
+	short part_code;
+
+	switch (event->what)
+	{
+		case mouseDown:
+			part_code= FindWindow(event->where, &window);
+			switch (part_code)
+			{
+				case inSysWindow: /* DAs and the menu bar can blow me */
+				case inMenuBar:
+					halt();
+					break;
+					
+				case inContent:
+					process_screen_click(event);
+					break;
+					
+				default:
+					halt();
+					break;
+			}
+			break;
 		
-		OffsetRect(&destination, frame->left-destination.left+DIALOG_HEADER_HORIZONTAL_INSET,
-			frame->top-destination.top+DIALOG_HEADER_VERTICAL_INSET);
-		GetForeColor(&old_forecolor);
-		GetBackColor(&old_backcolor);
-		RGBForeColor(&rgb_black);
-		RGBBackColor(&rgb_white);
-		CopyBits((const BitMap *) *pixmap, (const BitMap *) &dialog->portBits,
-			&(*pixmap)->bounds, &destination, srcCopy, (RgnHandle) NULL);
-		RGBForeColor(&old_forecolor);
-		RGBBackColor(&old_backcolor);
+		case keyDown:
+		case autoKey:
+			process_key(event, toupper(event->message&charCodeMask));
+			break;
+			
+		case updateEvt:
+			update_any_window((WindowPtr)event->message, event);
+			break;
+			
+		case activateEvt:
+			activate_any_window((WindowPtr)(event->message), event, event->modifiers&activeFlag);
+			break;
+
+		case kHighLevelEvent:
+			handle_high_level_event(event);
+			break;
+
+		case OSEvt:
+			switch (event->message>>24)
+			{
+				case SuspendResumeMessage:
+					if (event->message&ResumeMask)
+					{
+						/* resume */
+						SetCursor(&qd.arrow);
+					}
+					else
+					{
+						/* suspend */
+					}
+					break;
+			}
+			break;
+			
+		default:
+			break;
 	}
 		
+	return;
+}
+
+static void process_screen_click(
+	EventRecord *event)
+{
+	GrafPtr old_port;
+	Point where= event->where;
+	boolean cheatkeys_down;
+	
+	GetPort(&old_port);
+	SetPort(screen_window);
+	
+	GlobalToLocal(&where);
+	cheatkeys_down= has_cheat_modifiers(event);
+	portable_process_screen_click(where.h, where.v, cheatkeys_down);
+
+	SetPort(old_port);	
+	
+	return;
+}
+
+static void process_key(
+	EventRecord *event,
+	short key)
+{
+	process_game_key(event, key);
 	return;
 }

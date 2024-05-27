@@ -20,8 +20,7 @@
 Creator= 52.4
 
 # every source file should depend on {UbiqDependencies}
-UbiqDependencies=
-#makefile buildprogram
+UbiqDependencies= makefile buildprogram
 Application= marathon2
 
 # directory constants
@@ -152,7 +151,7 @@ PPCCOptions= -i "{CSeriesInterfaces}" {VersionPPCCOptions} -align mac68k -applee
 {Obj68k}preprocess_map_mac.c.o ƒ map.h world.h ":editor code:editor.h" interface.h shell.h game_wad.h ∂
 	overhead_map.h player.h game_window.h tags.h wad.h {UbiqDependencies}
 {Obj68k}screen_drawing.c.o ƒ interface.h map.h shell.h screen_drawing.h {UbiqDependencies}
-{Obj68k}game_dialogs.c.o ƒ interface.h world.h shell.h music.h serial_numbers.c {UbiqDependencies}
+{Obj68k}game_dialogs.c.o ƒ interface.h world.h shell.h music.h {UbiqDependencies}
 {Obj68k}game_window_macintosh.c.o ƒ map.h world.h interface.h player.h screen_drawing.h motion_sensor.h ∂
 	sound.h items.h weapons.h game_window.h {UbiqDependencies}
 {Obj68k}interface_macintosh.c.o ƒ map.h macintosh_network.h shell.h interface.h player.h network_sound.h ∂
@@ -204,6 +203,7 @@ PPCCOptions= -i "{CSeriesInterfaces}" {VersionPPCCOptions} -align mac68k -applee
 {Obj68k}game_window.c.o ƒ map.h world.h interface.h player.h screen_drawing.h motion_sensor.h ∂
 	sound.h items.h weapons.h game_window.h {UbiqDependencies}
 {Obj68k}fades.c.o ƒ interface.h shell.h {UbiqDependencies}
+{Obj68k}import_definitions.c.o ƒ wad.h extensions.h shell.h {UbiqDependencies}
 
 # --------------------------------------------------------------------------------------
 # 68K LIBRARY DEPENDENCIES
@@ -225,7 +225,8 @@ ShellLibObjects68k= {Obj68k}shell.c.o {Obj68k}screen.c.o {Obj68k}valkyrie.c.o {O
 GameLibObjects68k= {Obj68k}{Application}.c.o {Obj68k}devices.c.o {Obj68k}monsters.c.o ∂
 	{Obj68k}player.c.o {Obj68k}pathfinding.c.o {Obj68k}weapons.c.o {Obj68k}items.c.o ∂
 	{Obj68k}physics.c.o {Obj68k}projectiles.c.o {Obj68k}effects.c.o {Obj68k}scenery.c.o ∂
-	{Obj68k}fades.c.o {Obj68k}game_window.c.o {Obj68k}interface.c.o {Obj68k}vbl.c.o
+	{Obj68k}fades.c.o {Obj68k}game_window.c.o {Obj68k}interface.c.o {Obj68k}vbl.c.o ∂
+	{Obj68k}import_definitions.c.o
 NetworkLibObjects68k= {Obj68k}network_dialogs.c.o {Obj68k}network_names.c.o {Obj68k}network_adsp.c.o ∂
 	{Obj68k}network_ddp.c.o {Obj68k}network_lookup.c.o {Obj68k}network.c.o ∂
 	{Obj68k}network_microphone.c.o {Obj68k}network_speaker.c.o {Obj68k}network_games.c.o ∂
@@ -330,7 +331,7 @@ LinkDependencies68k= {ApplicationLibraries68k}
 {ObjPPC}sound.ppc.o ƒ interface.h shell.h sound.h sound_definitions.h sound_macintosh.c {UbiqDependencies}
 {ObjPPC}preprocess_map_mac.ppc.o ƒ map.h world.h ":editor code:editor.h" interface.h shell.h game_wad.h ∂
 	overhead_map.h player.h game_window.h tags.h wad.h {UbiqDependencies}
-{ObjPPC}game_dialogs.ppc.o ƒ interface.h world.h shell.h music.h serial_numbers.c {UbiqDependencies}
+{ObjPPC}game_dialogs.ppc.o ƒ interface.h world.h shell.h music.h {UbiqDependencies}
 {ObjPPC}screen_drawing.ppc.o ƒ interface.h map.h shell.h screen_drawing.h {UbiqDependencies}
 {ObjPPC}game_window_macintosh.ppc.o ƒ map.h world.h interface.h player.h screen_drawing.h motion_sensor.h ∂
 	sound.h items.h weapons.h game_window.h {UbiqDependencies}
@@ -384,6 +385,7 @@ LinkDependencies68k= {ApplicationLibraries68k}
 {ObjPPC}game_window.ppc.o ƒ map.h world.h interface.h player.h screen_drawing.h motion_sensor.h ∂
 	sound.h items.h weapons.h game_window.h {UbiqDependencies}
 {ObjPPC}fades.ppc.o ƒ interface.h shell.h {UbiqDependencies}
+{ObjPPC}import_definitions.ppc.o ƒ extensions.h wad.h {UbiqDependencies}
 
 # --------------------------------------------------------------------------------------
 # PPC LIBRARY DEPENDENCIES
@@ -406,7 +408,8 @@ ShellLibObjectsPPC= {ObjPPC}shell.ppc.o {ObjPPC}screen.ppc.o {ObjPPC}quadruple.s
 GameLibObjectsPPC= {ObjPPC}{Application}.ppc.o {ObjPPC}devices.ppc.o {ObjPPC}monsters.ppc.o ∂
 	{ObjPPC}player.ppc.o {ObjPPC}pathfinding.ppc.o {ObjPPC}weapons.ppc.o {ObjPPC}items.ppc.o ∂
 	{ObjPPC}physics.ppc.o {ObjPPC}projectiles.ppc.o {ObjPPC}effects.ppc.o {ObjPPC}scenery.ppc.o ∂
-	{ObjPPC}fades.ppc.o {ObjPPC}game_window.ppc.o {ObjPPC}interface.ppc.o {ObjPPC}vbl.ppc.o
+	{ObjPPC}fades.ppc.o {ObjPPC}game_window.ppc.o {ObjPPC}interface.ppc.o {ObjPPC}vbl.ppc.o ∂
+	{ObjPPC}import_definitions.ppc.o
 NetworkLibObjectsPPC= {ObjPPC}network_dialogs.ppc.o {ObjPPC}network_names.ppc.o {ObjPPC}network_adsp.ppc.o ∂
 	{ObjPPC}network_ddp.ppc.o {ObjPPC}network_lookup.ppc.o {ObjPPC}network.ppc.o ∂
 	{ObjPPC}network_microphone.ppc.o {ObjPPC}network_speaker.ppc.o {ObjPPC}network_games.ppc.o ∂

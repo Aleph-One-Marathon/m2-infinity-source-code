@@ -47,10 +47,8 @@ fileref open_file_for_reading(
 	error= FSpOpenDF((FSSpec *)file, fsRdPerm, &file_id);
 	if (error) 
 	{
-#ifdef DEBUG
-		dprintf("HOpen('%P', #%d, #%d)==#%d", file->name, file->vRefNum, file->parID, 
-			error);
-#endif
+		dprintf("HOpen('%P', #%d, #%d)==#%d;g;", file->name, file->vRefNum, file->parID, error);
+
 		file_id= NONE;
 		set_game_error(systemError, error);
 	}
@@ -69,10 +67,8 @@ fileref open_file_for_writing(
 	error= FSpOpenDF((FSSpec *)file, fsWrPerm, &file_id);
 	if (error) 
 	{
-#ifdef DEBUG
-		dprintf("HOpen('%P', #%d, #%d)==#%d", file->name, file->vRefNum, file->parID, 
-			error);
-#endif
+		dprintf("HOpen('%P', #%d, #%d)==#%d;g;", file->name, file->vRefNum, file->parID, error);
+
 		file_id= NONE;
 		set_game_error(systemError, error);
 	}
@@ -111,6 +107,17 @@ FileError set_fpos(
 	OSErr err;
 
 	err= SetFPos(refnum, fsFromStart, offset);
+	
+	return err;
+}
+
+FileError set_eof(
+	fileref refnum,
+	unsigned long offset)
+{
+	OSErr err;
+	
+	err= SetEOF(refnum, offset);
 	
 	return err;
 }

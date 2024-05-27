@@ -26,6 +26,8 @@ Thursday, July 6, 1995 4:53:52 PM
 #include "weapons.h"
 #include "game_window.h"
 #include "computer_interface.h"
+#include "projectiles.h"
+#include "network_games.h"
 
 /*
 //anybody on the receiving pad of a teleport should explode (what happens to invincible guys?)
@@ -88,16 +90,12 @@ struct damage_response_definition
 	short damage_threshhold; /* NONE is none, otherwise bumps fade by one if over threshhold */
 	
 	short fade;
-	short sound, death_sound;
+	short sound, death_sound, death_action;
 };
 
 /* ---------- globals */
 
-#ifdef DEMO
-struct player_data players[MAXIMUM_NUMBER_OF_PLAYERS];
-#else
 struct player_data *players;
-#endif
 
 struct player_data *local_player, *current_player;
 short local_player_index, current_player_index;
@@ -111,65 +109,49 @@ static struct player_shape_definitions player_shapes=
 	9, 8, /* dying hard, dying soft */
 	11, 10, /* dead hard, dead soft */
 	{7, 0, 0, 24, 23}, /* legs: stationary, walking, running, sliding, airborne */
-	{1, 3, 20, 26, 14, 12, 12, 16, 5, 18, 29}, /* idle torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, da ball */
-	{1, 3, 21, 26, 14, 12, 12, 16, 5, 18, 29}, /* charging torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, ball */
-	{2, 4, 22, 27, 15, 13, 13, 17, 6, 19, 29}, /* firing torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, ball */
+	{1, 3, 20, 26, 14, 12, 31, 16, 28, 5, 18}, /* idle torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, da ball */
+	{1, 3, 21, 26, 14, 12, 31, 16, 28, 5, 18}, /* charging torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, ball */
+	{2, 4, 22, 27, 15, 13, 32, 17, 28, 6, 19}, /* firing torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, ball */
 };
 
-/* Add to this as you will.. */
-static short player_initial_start_items[]= 
+#define NUMBER_OF_PLAYER_INITIAL_ITEMS (sizeof(player_initial_items)/sizeof(short))
+static short player_initial_items[]= 
 { 
 	_i_magnum,  // First weapon is the weapon he will use...
 	_i_knife,
 	_i_knife,
 	_i_magnum_magazine, 
 	_i_magnum_magazine,
-#if 0
-	_i_assault_rifle, 
-	_i_magnum, 
-	_i_missile_launcher, 
-	_i_flamethrower,
-	_i_plasma_pistol, 
-//	_i_alien_shotgun, 
-//	_i_shotgun,
-	_i_assault_rifle_magazine, 
-	_i_assault_grenade_magazine, 
-	_i_magnum_magazine, 
-	_i_missile_launcher_magazine, 
-	_i_flamethrower_canister,
-	_i_plasma_magazine, 
-//	_i_shotgun_magazine, 
-//	_i_shotgun,
-#endif
 	_i_magnum_magazine
 };
 	
 #define NUMBER_OF_DAMAGE_RESPONSE_DEFINITIONS (sizeof(damage_response_definitions)/sizeof(struct damage_response_definition))
 static struct damage_response_definition damage_response_definitions[]=
 {
-	{_damage_explosion, 100, _fade_yellow, NONE, NONE},
-	{_damage_crushing, NONE, _fade_red, NONE, NONE},
-	{_damage_projectile, NONE, _fade_red, NONE, NONE},
-	{_damage_electrical_staff, NONE, _fade_cyan, NONE, NONE},
-	{_damage_hulk_slap, NONE, _fade_cyan, NONE, NONE},
-	{_damage_absorbed, 100, _fade_white, _snd_absorbed, NONE},
-	{_damage_teleporter, 100, _fade_white, _snd_absorbed, NONE},
-	{_damage_flame, NONE, _fade_orange, NONE, NONE},
-	{_damage_hound_claws, NONE, _fade_red, NONE, NONE},
-	{_damage_compiler_bolt, NONE, _fade_static, NONE, NONE},
-	{_damage_alien_projectile, NONE, _fade_dodge_purple, NONE, NONE},
-	{_damage_hunter_bolt, NONE, _fade_burn_green, NONE, NONE},
-	{_damage_fusion_bolt, 60, _fade_negative, NONE, NONE},
-	{_damage_fist, 40, _fade_red, NONE, NONE},
-	{_damage_armageddon_electricity, NONE, _fade_burn_cyan, NONE, NONE},
-	{_damage_armageddon_sphere, NONE, _fade_dodge_yellow, NONE, NONE},
-	{_damage_wasp, NONE, _fade_purple, NONE, NONE},
-	{_damage_lava, NONE, _fade_long_orange, NONE, NONE},
-	{_damage_goo, NONE, _fade_long_green, NONE, NONE},
-	{_damage_suffocation, NONE, NONE, NONE, NONE},
-	{_damage_energy_drain, NONE, NONE, NONE, NONE},
-	{_damage_oxygen_drain, NONE, NONE, NONE, NONE},
-	{_damage_hummer_bolt, NONE, _fade_flicker_negative, NONE, NONE}
+	{_damage_explosion, 100, _fade_yellow, NONE, _snd_human_scream, _monster_is_dying_hard},
+	{_damage_crushing, NONE, _fade_red, NONE, _snd_human_wail, _monster_is_dying_hard},
+	{_damage_projectile, NONE, _fade_red, NONE, _snd_human_scream, NONE},
+	{_damage_shotgun_projectile, NONE, _fade_red, NONE, _snd_human_scream, NONE},
+	{_damage_electrical_staff, NONE, _fade_cyan, NONE, _snd_human_scream, NONE},
+	{_damage_hulk_slap, NONE, _fade_cyan, NONE, _snd_human_scream, NONE},
+	{_damage_absorbed, 100, _fade_white, _snd_absorbed, NONE, NONE},
+	{_damage_teleporter, 100, _fade_white, _snd_absorbed, NONE, NONE},
+	{_damage_flame, NONE, _fade_orange, NONE, _snd_human_wail, _monster_is_dying_flaming},
+	{_damage_hound_claws, NONE, _fade_red, NONE, _snd_human_scream, NONE},
+	{_damage_compiler_bolt, NONE, _fade_static, NONE, _snd_human_scream, NONE},
+	{_damage_alien_projectile, NONE, _fade_dodge_purple, NONE, _snd_human_wail, _monster_is_dying_flaming},
+	{_damage_hunter_bolt, NONE, _fade_burn_green, NONE, _snd_human_scream, NONE},
+	{_damage_fusion_bolt, 60, _fade_negative, NONE, _snd_human_scream, NONE},
+	{_damage_fist, 40, _fade_red, NONE, _snd_human_scream, NONE},
+	{_damage_yeti_claws, NONE, _fade_burn_cyan, NONE, _snd_human_scream, NONE},
+	{_damage_yeti_projectile, NONE, _fade_dodge_yellow, NONE, _snd_human_scream, NONE},
+	{_damage_defender, NONE, _fade_purple, NONE, _snd_human_scream, NONE},
+	{_damage_lava, NONE, _fade_long_orange, NONE, _snd_human_wail, _monster_is_dying_flaming},
+	{_damage_goo, NONE, _fade_long_green, NONE, _snd_human_wail, _monster_is_dying_flaming},
+	{_damage_suffocation, NONE, NONE, NONE, _snd_suffocation, _monster_is_dying_soft},
+	{_damage_energy_drain, NONE, NONE, NONE, NONE, NONE},
+	{_damage_oxygen_drain, NONE, NONE, NONE, NONE, NONE},
+	{_damage_hummer_bolt, NONE, _fade_flicker_negative, NONE, _snd_human_scream, NONE},
 };
 
 /* For teleportation */
@@ -185,16 +167,13 @@ static void kill_player(short player_index, short aggressor_player_index, short 
 static void give_player_initial_items(short player_index);
 static void get_player_transfer_mode(short player_index, short *transfer_mode, short *transfer_period);
 static void set_player_dead_shape(short player_index, boolean dying);
-static void burn_players_items(short player_index);
+static void remove_dead_player_items(short player_index);
 static void update_player_teleport(short player_index);
 static void handle_player_in_vacuum(short player_index, long action_flags);
 static void update_player_media(short player_index);
 static short calculate_player_team(short base_team);
-static void drop_the_ball(short player_index);
 
-#if 0
-static serial_number_validity_check(void);
-#endif
+static void try_and_strip_player_items(short player_index);
 
 /* ---------- code */
 
@@ -204,11 +183,9 @@ void allocate_player_memory(
 	long *action_queue_buffer;
 	short i;
 
-#ifndef DEMO	
 	/* allocate space for all our players */
 	players= (struct player_data *) malloc(sizeof(struct player_data)*MAXIMUM_NUMBER_OF_PLAYERS);
 	assert(players);
-#endif
 
 #ifdef BETA
 	dprintf("#%d players at %p (%x bytes each) ---------------------------------------;g;", MAXIMUM_NUMBER_OF_PLAYERS, players, sizeof(struct player_data));
@@ -268,13 +245,10 @@ short new_player(
 	/* Mark the player's inventory as dirty */
 	mark_player_inventory_as_dirty(player_index, NONE);
 	initialize_player_weapons(player_index);
-
-#if 0
-	if (get_game_status()==game_in_progress) serial_number_validity_check();
-#endif
 	
 	/* give the player his initial items */
-	if (GET_GAME_OPTIONS()&_burn_items_on_death) give_player_initial_items(player_index);
+	give_player_initial_items(player_index);
+	try_and_strip_player_items(player_index);
 
 	return player_index;
 }
@@ -355,7 +329,7 @@ void queue_action_flags(
 	{
 		queue->buffer[queue->write_index]= *action_flags++;
 		queue->write_index= (queue->write_index+1)&ACTION_QUEUE_BUFFER_INDEX_MASK;
-		if (queue->write_index==queue->read_index) dprintf("blew player %d’s queue at %p", player_index, queue);
+		if (queue->write_index==queue->read_index) dprintf("blew player %d’s queue at %p;g;", player_index, queue);
 	}
 
 	return;
@@ -411,22 +385,40 @@ void update_players(
 {
 	struct player_data *player;
 	short player_index;
-	long action_flags;
 	
 	for (player_index= 0, player= players; player_index<dynamic_world->player_count; ++player_index, ++player)
 	{
 		struct polygon_data *polygon= get_polygon_data(player->supporting_polygon_index);
-	
-		action_flags= dequeue_action_flags(player_index);
+		long action_flags= dequeue_action_flags(player_index);
+		
+		if (action_flags==NONE)
+		{
+			// net dead
+			if (!PLAYER_IS_DEAD(player))
+			{
+				// kills invincible players, too
+				detonate_projectile(&player->location, player->camera_polygon_index, _projectile_minor_fusion_dispersal,
+					NONE, NONE, 10*FIXED_ONE);
+			}
+			
+			action_flags= 0;
+		}
+
 		if (PLAYER_IS_TELEPORTING(player)) action_flags= 0;
 		
 		/* Deal with the terminal mode crap. */
-		if(player_in_terminal_mode(player_index))
+		if (player_in_terminal_mode(player_index))
 		{
 			update_player_keys_for_terminal(player_index, action_flags);
 			action_flags= 0;
 			update_player_for_terminal_mode(player_index);
 		}
+
+		// if we’ve got the ball we can’t run (that sucks)		
+		if (GET_GAME_TYPE()==_game_of_kill_man_with_ball && dynamic_world->game_player_index==player_index) action_flags&= ~_run_dont_walk;
+		
+		// if our head is under media, we can’t run (that sucks, too)
+		if ((player->variables.flags&_HEAD_BELOW_MEDIA_BIT) && (action_flags&_run_dont_walk)) action_flags&= ~_run_dont_walk, action_flags|= _swim;
 		
 		update_player_physics_variables(player_index, action_flags);
 
@@ -465,7 +457,7 @@ void update_players(
 		{
 			/* do things dead players do (sit around and check for self-reincarnation) */
 			if (PLAYER_HAS_MAP_OPEN(player)) SET_PLAYER_MAP_STATUS(player, FALSE);
- 			if (PLAYER_IS_TOTALLY_DEAD(player) && (action_flags&_action_trigger_state) && !player->reincarnation_delay && (player->variables.action==_player_stationary||dynamic_world->player_count==1))
+			if (PLAYER_IS_TOTALLY_DEAD(player) && (action_flags&_action_trigger_state) && !player->reincarnation_delay && (player->variables.action==_player_stationary||dynamic_world->player_count==1))
 			{
 				if (dynamic_world->player_count==1) set_game_state(_revert_game);
 				else revive_player(player_index);
@@ -501,6 +493,7 @@ void damage_player(
 	struct player_data *player= get_player_data(player_index);
 	short damage_amount= calculate_damage(damage);
 	short damage_type= damage->type;
+	struct damage_response_definition *definition;
 
 	#pragma unused (aggressor_type)
 
@@ -508,7 +501,15 @@ void damage_player(
 	{
 		damage_type= _damage_absorbed;
 	}
-	else
+
+	{
+		short i;
+		
+		for (i=0,definition=damage_response_definitions;definition->type!=damage_type && i<NUMBER_OF_DAMAGE_RESPONSE_DEFINITIONS;++i,++definition);
+		vassert(i!=NUMBER_OF_DAMAGE_RESPONSE_DEFINITIONS, csprintf(temporary, "can't react to damage type #%d", damage_type));
+	}
+	
+	if (damage_type!=_damage_absorbed)
 	{
 		/* record damage taken */
 		if (aggressor_index!=NONE)
@@ -548,20 +549,28 @@ void damage_player(
 					{
 						if (!PLAYER_IS_DEAD(player))
 						{
-							short action= (damage->type==_damage_explosion || damage->type==_damage_crushing || damage_amount>PLAYER_MAXIMUM_SUIT_ENERGY/2) ? _monster_is_dying_hard : _monster_is_dying_soft;
+							short action= definition->death_action;
 							
-							if (damage->type==_damage_flame) action= _monster_is_dying_flaming;
+							play_object_sound(player->object_index, definition->death_sound);
+
+							if (action==NONE)
+							{
+								action= (damage_amount>PLAYER_MAXIMUM_SUIT_ENERGY/2) ? _monster_is_dying_hard : _monster_is_dying_soft;
+							}
+							
 							kill_player(player_index, aggressor_player_index, action);
 							if (aggressor_player_index!=NONE)
 							{
 								struct player_data *agressor_player= get_player_data(aggressor_player_index);
 								
-								player->damage_taken[aggressor_player_index].kills+= 1;
-								if (aggressor_player_index != player_index)
+								if (player_killed_player(player_index, aggressor_player_index))
 								{
-									agressor_player->total_damage_given.kills++;
+									player->damage_taken[aggressor_player_index].kills+= 1;
+									if (aggressor_player_index != player_index)
+									{
+										agressor_player->total_damage_given.kills+= 1;
+									}
 								}
-								
 							}
 							else
 							{
@@ -580,13 +589,7 @@ void damage_player(
 	}
 	
 	{
-		struct damage_response_definition *definition;
-		short i;
-		
-		for (i=0,definition=damage_response_definitions;definition->type!=damage_type && i<NUMBER_OF_DAMAGE_RESPONSE_DEFINITIONS;++i,++definition);
-		assert(i!=NUMBER_OF_DAMAGE_RESPONSE_DEFINITIONS);
-		
-		play_object_sound(player->object_index, PLAYER_IS_DEAD(player) ? definition->sound : definition->death_sound);
+		if (!PLAYER_IS_DEAD(player)) play_object_sound(player->object_index, definition->sound);
 		if (player_index==current_player_index)
 		{
 			if (definition->fade!=NONE) start_fade((definition->damage_threshhold!=NONE&&damage_amount>definition->damage_threshhold) ? (definition->fade+1) : definition->fade);
@@ -636,9 +639,10 @@ void mark_player_collections(
 struct player_data *get_player_data(
 	short player_index)
 {
-	assert(player_index>=0&&player_index<dynamic_world->player_count);
+	vassert(player_index>=0&&player_index<dynamic_world->player_count,
+		csprintf(temporary, "asked for player #%d/#%d", player_index, dynamic_world->player_count));
 	
-	return players+player_index;
+	return players + player_index;
 }
 #endif
 
@@ -700,6 +704,49 @@ short get_polygon_index_supporting_player(
 	return player->supporting_polygon_index;
 }
 
+boolean legal_player_powerup(
+	short player_index,
+	short item_index)
+{
+	struct player_data *player= get_player_data(player_index);
+	boolean legal= TRUE;
+	
+	switch (item_index)
+	{
+		case _i_invisibility_powerup:
+			if (player->invisibility_duration>kINVISIBILITY_DURATION) legal= FALSE;
+			break;
+
+		case _i_invincibility_powerup:
+			if (player->invincibility_duration) legal= FALSE;
+			break;
+		
+		case _i_infravision_powerup:
+			if (player->infravision_duration) legal= FALSE;
+			break;
+		
+		case _i_extravision_powerup:
+			if (player->extravision_duration) legal= FALSE;
+			break;
+		
+		case _i_oxygen_powerup:
+			if (player->suit_oxygen>5*PLAYER_MAXIMUM_SUIT_OXYGEN/6) legal= FALSE;
+			break;
+		
+		case _i_energy_powerup:
+			if (player->suit_energy>=1*PLAYER_MAXIMUM_SUIT_ENERGY) legal= FALSE;
+			break;
+		case _i_double_energy_powerup:
+			if (player->suit_energy>=2*PLAYER_MAXIMUM_SUIT_ENERGY) legal= FALSE;
+			break;
+		case _i_triple_energy_powerup:
+			if (player->suit_energy>=3*PLAYER_MAXIMUM_SUIT_ENERGY) legal= FALSE;
+			break;
+	}
+
+	return legal;
+}
+
 void process_player_powerup(
 	short player_index,
 	short item_index)
@@ -726,13 +773,30 @@ void process_player_powerup(
 			break;
 		
 		case _i_oxygen_powerup:
+			player->suit_oxygen= CEILING(player->suit_oxygen+PLAYER_MAXIMUM_SUIT_OXYGEN/2, PLAYER_MAXIMUM_SUIT_OXYGEN);
+			if (player_index==current_player_index) mark_oxygen_display_as_dirty();
 			break;
 		
 		case _i_energy_powerup:
+			if (player->suit_energy<1*PLAYER_MAXIMUM_SUIT_ENERGY)
+			{
+				player->suit_energy= 1*PLAYER_MAXIMUM_SUIT_ENERGY;
+				if (player_index==current_player_index) mark_shield_display_as_dirty();
+			}
 			break;
 		case _i_double_energy_powerup:
+			if (player->suit_energy<2*PLAYER_MAXIMUM_SUIT_ENERGY)
+			{
+				player->suit_energy= 2*PLAYER_MAXIMUM_SUIT_ENERGY;
+				if (player_index==current_player_index) mark_shield_display_as_dirty();
+			}
 			break;
 		case _i_triple_energy_powerup:
+			if (player->suit_energy<3*PLAYER_MAXIMUM_SUIT_ENERGY)
+			{
+				player->suit_energy= 3*PLAYER_MAXIMUM_SUIT_ENERGY;
+				if (player_index==current_player_index) mark_shield_display_as_dirty();
+			}
 			break;
 	}
 
@@ -803,10 +867,10 @@ static void handle_player_in_vacuum(
 		player->suit_oxygen-= 1;
 		switch (dynamic_world->game_information.difficulty_level)
 		{
-			case _major_damage_level:
-				if (action_flags&(_left_trigger_state|_right_trigger_state)) player->suit_oxygen-= 1;
 			case _total_carnage_level:
 				if (action_flags&_run_dont_walk) player->suit_oxygen-= 1;
+			case _major_damage_level:
+				if (action_flags&(_left_trigger_state|_right_trigger_state)) player->suit_oxygen-= 1;
 				break;
 		}
 
@@ -834,11 +898,41 @@ static void update_player_teleport(
 	struct monster_data *monster= get_monster_data(player->monster_index);
 	struct object_data *object= get_object_data(monster->object_index);
 	struct polygon_data *polygon= get_polygon_data(object->polygon);
+	boolean player_was_interlevel_teleporting= FALSE;
+	
+	/* This is the players that are carried across the teleport unwillingly.. */
+	if(PLAYER_IS_INTERLEVEL_TELEPORTING(player))
+	{
+		player_was_interlevel_teleporting= TRUE;
+		
+		player->interlevel_teleport_phase+= 1;
+		switch(player->interlevel_teleport_phase)
+		{
+			case PLAYER_TELEPORTING_DURATION:
+				monster->action= _monster_is_moving;
+				SET_PLAYER_TELEPORTING_STATUS(player, FALSE);
+				SET_PLAYER_INTERLEVEL_TELEPORTING_STATUS(player, FALSE);
+				break;
+
+			/* +1 because they are teleporting to a new level, and we want the squeeze in to happen */
+			/*  after the level transition */
+			case PLAYER_TELEPORTING_MIDPOINT+1:
+				/* Either the player is teleporting, or everyone is. (level change) */
+				if(player_index==current_player_index)
+				{
+					start_teleporting_effect(FALSE);
+					play_object_sound(player->object_index, _snd_teleport_in); 
+				}
+				player->teleporting_destination= NO_TELEPORTATION_DESTINATION;
+				break;
+				
+			default:
+				break;
+		}
+	}
 
 	if (PLAYER_IS_TELEPORTING(player))
 	{
-		boolean changing_level= FALSE;
-	
 		switch (player->teleporting_phase+= 1)
 		{
 			case PLAYER_TELEPORTING_MIDPOINT:
@@ -860,9 +954,6 @@ static void update_player_teleport(
 
 					translate_map_object(player->object_index, &destination, destination_polygon_index);
 					initialize_player_physics_variables(player_index);
-
-					/* teleport in sound, at destination */
-					play_object_sound(player->object_index, _snd_teleport_in); 
 				} else { /* -level number is the interlevel */
  					short level_number= -player->teleporting_destination;
 					
@@ -874,17 +965,17 @@ static void update_player_teleport(
 					} else {
 						set_game_state(_change_level);
 						set_change_level_destination(level_number);
-
-						changing_level= TRUE;
 					}
 				}
+				break;
 
-				/* Either the player is teleporting, or everyone is. (level change) */				
-				if (player_index==current_player_index || changing_level)
+			case PLAYER_TELEPORTING_MIDPOINT+1:
+				 /* Interlevel or my intralevel.. */
+				if(player_index==current_player_index)
 				{
 					start_teleporting_effect(FALSE);
-//					start_fade(_fade_bright);
-				}
+					play_object_sound(player->object_index, _snd_teleport_in); 
+				} 
 				player->teleporting_destination= NO_TELEPORTATION_DESTINATION;
 				break;
 			
@@ -894,7 +985,7 @@ static void update_player_teleport(
 				break;
 		}
 	}
-	else
+	else if(!player_was_interlevel_teleporting)
 	{
 		/* Note that control panels can set the teleporting destination. */
 		if (player->teleporting_destination!=NO_TELEPORTATION_DESTINATION ||
@@ -908,14 +999,15 @@ static void update_player_teleport(
 			if(--player->delay_before_teleport<0)
 			{
 				SET_PLAYER_TELEPORTING_STATUS(player, TRUE);
+				monster->action= _monster_is_teleporting;
 				player->teleporting_phase= 0;
 				player->delay_before_teleport= 0; /* The only function that changes this are */
 													/* computer terminals. */
-				
+
 				/* They are in an automatic exit. */
-				if(player->teleporting_destination==NO_TELEPORTATION_DESTINATION)
+				if (player->teleporting_destination==NO_TELEPORTATION_DESTINATION)
 				{
-					if(polygon->type==_polygon_is_automatic_exit && calculate_level_completion_state()!=_level_unfinished)
+					if (polygon->type==_polygon_is_automatic_exit && calculate_level_completion_state()!=_level_unfinished)
 					{
 						/* This is an auto exit, and they are successful */
 						player->teleporting_destination= -polygon->permutation;
@@ -927,28 +1019,46 @@ static void update_player_teleport(
 					}
 				}
 	
-				if(player->teleporting_destination>=0) /* simple teleport */
+				if (player->teleporting_destination>=0) /* simple teleport */
 				{
-					if (player_index==current_player_index) start_teleporting_effect(TRUE);
-					play_object_sound(player->object_index, _snd_teleport_out); /* teleport out sound */
-					monster->action= _monster_is_teleporting;
-				} else { /* Level change */
+					if (player_index==current_player_index) 
+					{
+						start_teleporting_effect(TRUE);
+					}
+					play_object_sound(player->object_index, _snd_teleport_out);
+				}
+				else /* Level change */
+				{
+					short other_player_index;
+				
 					/* Everyone plays the teleporting effect out. */
 					start_teleporting_effect(TRUE);
+					play_object_sound(current_player->object_index, _snd_teleport_out);
 					
 					/* Every players object plays the sound, and everyones monster responds. */
-					for(player_index= 0; player_index<dynamic_world->player_count; ++player_index)
+					for (other_player_index= 0; other_player_index<dynamic_world->player_count; ++other_player_index)
 					{
-						player= get_player_data(player_index);
-						monster= get_monster_data(player->monster_index);
+						player= get_player_data(other_player_index);
+
+						/* Set them to be teleporting if the already aren’t, or if they are but it */
+						/*  is a simple teleport (intralevel) */
+						if (player_index!=other_player_index)
+						{
+							monster= get_monster_data(player->monster_index);
+					
+							/* Tell everyone else to use the teleporting junk... */
+							SET_PLAYER_INTERLEVEL_TELEPORTING_STATUS(player, TRUE);
+							player->interlevel_teleport_phase= 0;
 						
-						play_object_sound(player->object_index, _snd_teleport_out); /* teleport out sound */
-						monster->action= _monster_is_teleporting;
+							monster->action= _monster_is_teleporting;
+						}
 					}
 				}
 			}
 		}
 	}
+	
+	return;
 }
 
 static void update_player_media(
@@ -1050,17 +1160,9 @@ static void set_player_shapes(
 			default: halt();
 		}
 		assert(player->variables.action>=0 && player->variables.action<NUMBER_OF_PLAYER_ACTIONS);
+		
 		new_legs_shape= BUILD_DESCRIPTOR(BUILD_COLLECTION(player_shapes.collection, player->team), player_shapes.legs[player->variables.action]);
-
-		if(pseudo_weapon_type==_weapon_ball)
-		{
-			short color= find_player_ball_color(player_index);
-
-			/* Use the balls color for the torso.. */
-			new_torso_shape= BUILD_DESCRIPTOR(BUILD_COLLECTION(player_shapes.collection, color), torso_shape);
-		} else {
-			new_torso_shape= BUILD_DESCRIPTOR(BUILD_COLLECTION(player_shapes.collection, player->color), torso_shape);
-		}
+		new_torso_shape= BUILD_DESCRIPTOR(BUILD_COLLECTION(player_shapes.collection, player->color), torso_shape);
 
 		/* stuff in the transfer modes */
 		if (legs->transfer_mode!=transfer_mode) legs->transfer_mode= transfer_mode, legs->transfer_period= transfer_period, legs->transfer_phase= 0;
@@ -1074,12 +1176,15 @@ static void set_player_shapes(
 	if (animate)
 	{
 		/* animate the player only if we’re not airborne and not totally dead */
-		if (variables->action!=_player_airborne&&!PLAYER_IS_TOTALLY_DEAD(player)) animate_object(monster->object_index);
+		if ((variables->action!=_player_airborne || (PLAYER_IS_TELEPORTING(player) || PLAYER_IS_INTERLEVEL_TELEPORTING(player)))&&!PLAYER_IS_TOTALLY_DEAD(player)) animate_object(monster->object_index);
 		if (PLAYER_IS_DEAD(player) && !PLAYER_IS_TELEPORTING(player) && (GET_OBJECT_ANIMATION_FLAGS(legs)&_obj_last_frame_animated) && !PLAYER_IS_TOTALLY_DEAD(player))
 		{
 			/* we’ve finished the animation; let the player reincarnate if he wants to */
 			SET_PLAYER_TOTALLY_DEAD_STATUS(player, TRUE);
 			set_player_dead_shape(player_index, FALSE);
+
+			/* If you had something cool, you don't anymore.. */
+			remove_dead_player_items(player_index);
 		}
 	}
 
@@ -1126,17 +1231,19 @@ static void revive_player(
 	SET_PLAYER_DEAD_STATUS(player, FALSE);
 	SET_PLAYER_TOTALLY_DEAD_STATUS(player, FALSE);
 	SET_PLAYER_TELEPORTING_STATUS(player, FALSE);
+	SET_PLAYER_INTERLEVEL_TELEPORTING_STATUS(player, FALSE);
 	player->invincibility_duration= 0;
 	player->invisibility_duration= 0;
 	player->infravision_duration= 0;
 	player->extravision_duration= 0;
 	player->control_panel_side_index= NONE; // not using a control panel.
 
-	/* If we burn items on death, give this player the initial stuff. */
-	if (GET_GAME_OPTIONS()&_burn_items_on_death) give_player_initial_items(player_index);
+	give_player_initial_items(player_index);
 
 	/* set the correct shapes and transfer mode */
 	set_player_shapes(player_index, FALSE);
+
+	try_and_strip_player_items(player_index);
 
 	/* Update the interface to reflect your player's changed status */
 	if (player_index==current_player_index) update_interface(NONE); 
@@ -1154,6 +1261,7 @@ static void recreate_player(
 	struct player_data *player= get_player_data(player_index);
 	short placement_team;
 	struct object_location location;
+	boolean  player_teleported_dead= FALSE;
 	
 	/* Determine the location */
 	placement_team= calculate_player_team(player->team);
@@ -1167,9 +1275,13 @@ static void recreate_player(
 	attach_parasitic_object(monster->object_index, 0, location.yaw);
 	
 	/* and initialize it */
-//	player->flags= 0;
-	player->flags &= (_player_has_cheated_flag | _player_is_teleporting_flag); /* Player has cheated persists. */
+	if(PLAYER_IS_TOTALLY_DEAD(player) || PLAYER_IS_DEAD(player))
+	{
+		player_teleported_dead= TRUE;
+	}
 
+//	player->flags= 0;
+	player->flags &= (_player_has_cheated_flag | _player_is_teleporting_flag | _player_is_interlevel_teleporting_flag); /* Player has cheated persists. */
 	player->monster_index= monster_index;
 	player->object_index= monster->object_index;
 
@@ -1183,7 +1295,7 @@ static void recreate_player(
 	/* None of the weapons array data... */
 	/* None of the items array data.. */
 	/* The inventory offset/dirty flags.. */
-	mark_player_inventory_as_dirty(player_index, _weapon);
+	mark_player_inventory_screen_as_dirty(player_index, _weapon);
 
 	/* Nuke the physics */
 	memset(&player->variables, 0, sizeof(struct physics_variables));
@@ -1194,6 +1306,24 @@ static void recreate_player(
 
 	player->control_panel_side_index = NONE; // not using a control panel.
 	initialize_player_terminal_info(player_index);
+
+#ifdef OBSOLETE
+	/* If the player transported dead.. */
+	if(player_needs_weapons)
+	{
+		initialize_player_weapons(player_index);
+	
+		/* give the player his initial items */
+		give_player_initial_items(player_index);
+	}
+#endif
+
+	try_and_strip_player_items(player_index);
+
+	if(player_teleported_dead)
+	{
+		kill_player(player_index, NONE, _monster_is_dying_soft);
+	}
 
 	return;
 }
@@ -1224,10 +1354,6 @@ static void kill_player(
 	/* make our player dead */
 	SET_PLAYER_DEAD_STATUS(player, TRUE);
 
-	/* If you had something cool, you don't anymore.. */
-	drop_the_ball(player_index);
-	if (GET_GAME_OPTIONS()&_burn_items_on_death) burn_players_items(player_index);
-
 	player->reincarnation_delay= MINIMUM_REINCARNATION_DELAY;
 	if (GET_GAME_OPTIONS()&_dying_is_penalized) player->reincarnation_delay+= NORMAL_REINCARNATION_DELAY;
 	if (aggressor_player_index==player_index && (GET_GAME_OPTIONS()&_suicide_is_penalized)) player->reincarnation_delay+= SUICIDE_REINCARNATION_DELAY;
@@ -1243,65 +1369,97 @@ static void give_player_initial_items(
 	struct player_data *player= get_player_data(player_index);
 	short loop;
 
-	for(loop=0; loop<(sizeof(player_initial_start_items)/sizeof(short)); ++loop)
+	for(loop= 0; loop<NUMBER_OF_PLAYER_INITIAL_ITEMS; ++loop)
 	{
 		/* Get the item.. */
-		assert(player_initial_start_items[loop]>=0 && player_initial_start_items[loop]<NUMBER_OF_ITEMS);
-		if(player->items[player_initial_start_items[loop]]==NONE)
+		assert(player_initial_items[loop]>=0 && player_initial_items[loop]<NUMBER_OF_ITEMS);
+
+		if(player->items[player_initial_items[loop]]==NONE)
 		{
-			player->items[player_initial_start_items[loop]]= 1;
+			player->items[player_initial_items[loop]]= 1;
 		} else {
-			player->items[player_initial_start_items[loop]]+= 1;
+			player->items[player_initial_items[loop]]+= 1;
 		}
 		
-		process_new_item_for_reloading(player_index, player_initial_start_items[loop]);
+		process_new_item_for_reloading(player_index, player_initial_items[loop]);
 	}
 	
 	return;
 }
 
-static void drop_the_ball(
+static void remove_dead_player_items(
 	short player_index)
 {
 	struct player_data *player= get_player_data(player_index);
 	short item_type;
-	
-	for (item_type= 0; item_type<NUMBER_OF_ITEMS; ++item_type)
+	short i;
+
+	// subtract all initial items	
+	for (i= 0; i<NUMBER_OF_PLAYER_INITIAL_ITEMS; ++i)
 	{
-		short item_count= player->items[item_type];
-		
-		if(item_count>0 && get_item_kind(item_type)==_ball)
+		if (player->items[player_initial_items[i]]>0)
 		{
-			struct object_data *object= get_object_data(player->object_index);
-			struct object_location location;
-
-			location.p= object->location;
-			location.p.z= 0;
-			location.polygon_index= object->polygon;
-			location.yaw= location.pitch= location.flags= 0;
-		
-			/* Drop the ball.. */
-			new_item(&location, item_type);
+			player->items[player_initial_items[i]]-= 1;
 		}
-		player->items[item_type]= NONE;
 	}
 
-	mark_player_inventory_as_dirty(player_index, NONE);
+	// drop any balls
+	{
+		short ball_color= find_player_ball_color(player_index);
+		
+		if (ball_color!=NONE)
+		{
+			short item_type= BALL_ITEM_BASE + ball_color;
+			
+			drop_the_ball(&player->camera_location, player->camera_polygon_index, 
+				player->monster_index, _monster_marine, item_type);
+			player->items[item_type]= NONE;
+		}
+	}
 
-	return;
-}
-
-static void burn_players_items(
-	short player_index)
-{
-	struct player_data *player= get_player_data(player_index);
-	short item_type;
-	
 	for (item_type= 0; item_type<NUMBER_OF_ITEMS; ++item_type)
 	{
 		short item_count= player->items[item_type];
-		
-		while ((item_count-= 1)>=0) object_was_just_destroyed(_object_is_item, item_type);
+			
+		while ((item_count-= 1)>=0)
+		{
+			short item_kind= get_item_kind(item_type);
+			boolean dropped= FALSE;
+			
+			// if we’re not set to burn items or this is an important item (i.e., repair chip) drop it
+			if (!(GET_GAME_OPTIONS()&_burn_items_on_death) ||
+				(item_kind==_item && dynamic_world->player_count>1))
+			{
+				if (item_kind!=_ammunition || !(random()&1))
+				{
+					world_point3d random_point;
+					short random_polygon_index;
+					short retries= 5;
+					
+					do
+					{
+						random_point_on_circle(&player->location, player->supporting_polygon_index, WORLD_ONE_FOURTH, &random_point, &random_polygon_index);
+					}
+					while (random_polygon_index==NONE && --retries);
+					
+					if (random_polygon_index!=NONE)
+					{
+						struct object_location location;
+
+						location.polygon_index= random_polygon_index;
+						location.p.x= random_point.x, location.p.y= random_point.y, location.p.z= 0;
+						location.yaw= 0;
+						location.flags= 0;
+						new_item(&location, item_type);
+						
+						dropped= TRUE;
+					}
+				}
+			}
+			
+			if (!dropped) object_was_just_destroyed(_object_is_item, item_type);
+		}
+
 		player->items[item_type]= NONE;
 	}
 
@@ -1323,6 +1481,11 @@ static void get_player_transfer_mode(
 	if (PLAYER_IS_TELEPORTING(player))
 	{
 		*transfer_mode= player->teleporting_phase<PLAYER_TELEPORTING_MIDPOINT ? _xfer_fold_out : _xfer_fold_in;
+		*transfer_period= PLAYER_TELEPORTING_MIDPOINT+1;
+	} 
+	else if (PLAYER_IS_INTERLEVEL_TELEPORTING(player))
+	{
+		*transfer_mode= player->interlevel_teleport_phase<PLAYER_TELEPORTING_MIDPOINT ? _xfer_fold_out : _xfer_fold_in;
 		*transfer_period= PLAYER_TELEPORTING_MIDPOINT+1;
 	}
 	else
@@ -1420,61 +1583,33 @@ static short calculate_player_team(
 	return team;
 }	
 
-#if 0
-#define DECODE_ONLY
-#include "macintosh_cseries.h"
-#include "serial_numbers.c"
-#include "network.h"
-#include "shell.h"
-#include "projectiles.h"
-#include "preferences.h"
-
-extern short alien_projectile_override, human_projectile_override;
-
-static serial_number_validity_check(
-	void)
+#define STRIPPED_ENERGY (PLAYER_MAXIMUM_SUIT_ENERGY/4)
+static void try_and_strip_player_items(
+	short player_index)
 {
-	short i, j;
-	boolean found_duplicate= FALSE;
-	boolean found_illegal= FALSE;
+	struct player_data *player= get_player_data(player_index);
+	short item_type;
 	
-	dprintf("serial number checking.....................................................;g;");
-	
-//	if (preferences->last_time_ran<0xab1747dc || preferences->last_time_ran>0xab553918)
+	if (static_world->environment_flags&_environment_rebellion)
 	{
-		for (i= 0; i<dynamic_world->player_count; ++i)
+		for (item_type= 0; item_type<NUMBER_OF_ITEMS; ++item_type)
 		{
-			byte *player1_long_serial_number= game_is_networked ? ((struct player_info *)NetGetPlayerData(i))->long_serial_number : serial_preferences->long_serial_number;
-			byte short_serial_number[BYTES_PER_SHORT_SERIAL_NUMBER];
-			byte inferred_pad[BYTES_PER_SHORT_SERIAL_NUMBER];
-			
-			if (game_is_networked)
+			switch (item_type)
 			{
-				for (j= i+1; j<dynamic_world->player_count; ++j)
-				{
-					struct player_info *player2= NetGetPlayerData(j);
-					short k;
-					
-					for (k= 0; k<10 && player1_long_serial_number[k]==player2->long_serial_number[k]; ++k);
-					if (k==10) found_duplicate= TRUE;
-				}
+				case _i_knife:
+					break;
+				
+				default:
+					player->items[item_type]= NONE;
+					break;
 			}
-			
-			long_serial_number_to_short_serial_number_and_pad(player1_long_serial_number, short_serial_number, inferred_pad);
-			if (!PADS_ARE_EQUAL(inferred_pad, actual_pad) || !VALID_INVERSE_SEQUENCE(short_serial_number) ||
-				(!game_is_networked && ((char)short_serial_number[2])<0))
-			{
-				found_illegal= TRUE;
-			}
-
-			dprintf("player #%d (%08x%08x%04x) %d %d;g;", i, *(long*)player1_long_serial_number,
-				*(long*)(player1_long_serial_number+4), *(short*)(player1_long_serial_number+8),
-				found_duplicate, found_illegal);
 		}
+	
+		mark_player_inventory_as_dirty(player_index, NONE);
+		initialize_player_weapons(player_index);
+		
+		if (player->suit_energy>STRIPPED_ENERGY) player->suit_energy= STRIPPED_ENERGY;
 	}
-
-	if (found_illegal || found_duplicate) alien_projectile_override= _projectile_rocket, human_projectile_override= _projectile_rifle_bullet;
 	
 	return;
 }
-#endif

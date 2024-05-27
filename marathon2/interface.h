@@ -22,41 +22,47 @@ enum /* filenames in strFILENAMES */
 	filenameMARATHON_RECORDING,
 	filenamePHYSICS_MODEL,
 	filenameMUSIC,
-	filenameIMAGES
+	filenameIMAGES,
+	filenameMOVIE
 };
+
+#define strPATHS 138
 
 #define strERRORS 128
 enum /* errors in strERRORS */
 {
-	 badProcessor= 0,
-	 badQuickDraw,
-	 badSystem,
-	 badMemory,
-	 badMonitor,
-	 badExtraFileLocations,
-	 badSoundChannels,
-	 fileError,
-	 copyHasBeenModified, // bad serial number
-	 copyHasExpired,
-	 keyIsUsedForSound,
-	 keyIsUsedForMapZooming,
-	 keyIsUsedForScrolling,
-	 keyIsUsedAlready,
-	 outOfMemory,
-	 warningExternalPhysicsModel,
-	 warningExternalMapsFile,
-	 badReadMapGameError,
-	 badReadMapSystemError,
-	 badWriteMap,
-	 badSerialNumber,
-	 duplicateSerialNumbers,
-	 networkOnlySerialNumber,
-	 corruptedMap,
-	 checkpointNotFound,
-	 pictureNotFound,
-	 networkNotSupportedForDemo,
-	 serverQuitInCooperativeNetGame,
-	 unableToGracefullyChangeLevelsNet
+	badProcessor= 0,
+	badQuickDraw,
+	badSystem,
+	badMemory,
+	badMonitor,
+	badExtraFileLocations,
+	badSoundChannels,
+	fileError,
+	copyHasBeenModified, // bad serial number
+	copyHasExpired,
+	keyIsUsedForSound,
+	keyIsUsedForMapZooming,
+	keyIsUsedForScrolling,
+	keyIsUsedAlready,
+	outOfMemory,
+	warningExternalPhysicsModel,
+	warningExternalMapsFile,
+	badReadMapGameError,
+	badReadMapSystemError,
+	badWriteMap,
+	badSerialNumber,
+	duplicateSerialNumbers,
+	networkOnlySerialNumber,
+	corruptedMap,
+	checkpointNotFound,
+	pictureNotFound,
+	networkNotSupportedForDemo,
+	serverQuitInCooperativeNetGame,
+	unableToGracefullyChangeLevelsNet,
+	cantFindMap,	// called when the save game can't find the map.  Reverts to default map.
+	cantFindReplayMap, // called when you can't find the map that the replay references..
+	notEnoughNetworkMemory
 };
 
 enum /* animation types */
@@ -96,6 +102,8 @@ enum /* The various default key setups a user can select. for vbl.c and it's cal
 	
 	_custom_keyboard_setup = NONE
 };
+
+#define INDEFINATE_TIME_DELAY (LONG_MAX)
 
 /* ---------- shape descriptors */
 
@@ -175,19 +183,85 @@ enum { /* states. */
 
 boolean game_window_is_full_screen(void);
 void set_change_level_destination(short level_number);
+boolean networking_available(void);
+void free_and_unlock_memory(void);
 
 /* ---------- prototypes/INTERFACE.C */
 
-void toggle_suppression_of_background_tasks(void);
+void initialize_game_state(void);
+void force_game_state_change(void);
 boolean player_controlling_game(void);
-void main_event_loop(void);
-short get_game_controller(void);
+
+void toggle_suppression_of_background_tasks(void);
+boolean suppress_background_events(void);
+
 void set_game_state(short new_state);
 short get_game_state(void);
-void initialize_game_state(void);
-void try_and_display_chapter_screen(short level);
-void display_epilogue(void);
+short get_game_controller(void);
+void set_change_level_destination(short level_number);
 boolean check_level_change(void);
+void pause_game(void);
+void resume_game(void);
+void portable_process_screen_click(short x, short y, boolean cheatkeys_down);
+void draw_menu_button_for_command(short index);
+void update_interface_display(void);
+void idle_game_state(void);
+void display_main_menu(void);
+void do_menu_item_command(short menu_id, short menu_item, boolean cheat);
+boolean interface_fade_finished(void);
+void stop_interface_fade(void);
+boolean enabled_item(short item);
+void paint_window_black(void);
+
+/* ---------- prototypes/INTERFACE_MACINTOSH.C */
+void do_preferences(void);
+short get_level_number_from_user(void);
+void toggle_menus(boolean game_started);
+short get_difficulty_level(void);
+void install_network_microphone(void);
+void remove_network_microphone(void);
+
+void show_movie(short index);
+
+void exit_networking(void);
+
+void load_main_menu_buffers(short base_id);
+boolean main_menu_buffers_loaded(void);
+void main_menu_bit_depth_changed(short base_id);
+void free_main_menu_buffers(void);
+void draw_main_menu(void);
+void draw_menu_button(short index, boolean pressed);
+
+/* ---------- prototypes/INTERFACE_MACINTOSH.C- couldn't think of a better place... */
+void hide_cursor(void);
+void show_cursor(void);
+boolean mouse_still_down(void);
+void get_mouse_position(short *x, short *y);
+void set_drawing_clip_rectangle(short top, short left, short bottom, short right);
+
+/* ---------- prototypes/SHAPES.C */
+void *get_global_shading_table(void);
+
+short get_shape_descriptors(short shape_type, shape_descriptor *buffer);
+
+#define get_shape_bitmap_and_shading_table(shape, bitmap, shading_table, shading_mode) extended_get_shape_bitmap_and_shading_table(GET_DESCRIPTOR_COLLECTION(shape), \
+	GET_DESCRIPTOR_SHAPE(shape), (bitmap), (shading_table), (shading_mode))
+void extended_get_shape_bitmap_and_shading_table(short collection_code, short low_level_shape_index,
+	struct bitmap_definition **bitmap, void **shading_tables, short shading_mode);
+
+#define get_shape_information(shape) extended_get_shape_information(GET_DESCRIPTOR_COLLECTION(shape), GET_DESCRIPTOR_SHAPE(shape))
+struct shape_information_data *extended_get_shape_information(short collection_code, short low_level_shape_index);
+
+void get_shape_hotpoint(shape_descriptor texture, short *x0, short *y0);
+struct shape_animation_data *get_shape_animation_data(shape_descriptor texture);
+void process_collection_sounds(short colleciton_code, void (*process_sound)(short sound_index));
+
+#define mark_collection_for_loading(c) mark_collection((c), TRUE)
+#define mark_collection_for_unloading(c) mark_collection((c), FALSE)
+void mark_collection(short collection_code, boolean loading);
+void strip_collection(short collection_code);
+void load_collections(void);
+void unload_all_collections(void);
 
 /* ---------- prototypes/PREPROCESS_MAP_MAC.C */
 void setup_revert_game_info(struct game_data *game_info, struct player_start_data *start, struct entry_point *entry);
@@ -232,12 +306,16 @@ short dequeue_keymaps(short count, long *buffer);
 boolean handle_preferences_dialog(void);
 void handle_load_game(void);
 void handle_save_game(void);
-void ask_for_serial_number(void);
 boolean handle_start_game(void);
 boolean quit_without_saving(void);
 
 /* ---------- prototypes/GAME_WINDOW.C */
 void scroll_inventory(short dy);
+
+/* ---------- prototypes/NETWORK.C */
+
+boolean network_gather(void);
+boolean network_join(void);
 
 /* ---------- prototypes/NETWORK_MICROPHONE.C */
 

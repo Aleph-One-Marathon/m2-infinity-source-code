@@ -23,7 +23,13 @@ Thursday, December 8, 1994 3:58:12 PM  (Jason)
 #include "scenery.h"
 #include "platforms.h"
 #include "lightsource.h"
-#include "music.h"
+#include "media.h"
+#include "fades.h"
+#include "items.h"
+#include "weapons.h"
+#include "game_window.h"
+#include "sound.h"
+#include "network_games.h"
 
 #ifdef mpwc
 #pragma segment marathon
@@ -34,7 +40,8 @@ Thursday, December 8, 1994 3:58:12 PM  (Jason)
 /* ---------- private prototypes */
 
 static void game_timed_out(void);
-static boolean game_is_over(void);
+
+static void load_all_game_sounds(short environment_code);
 
 /* ---------- code */
 
@@ -51,13 +58,12 @@ void initialize_marathon(
 	allocate_pathfinding_memory();
 	allocate_flood_map_memory();
 	allocate_texture_tables();
-	initialize_weapons();
+	initialize_weapon_manager();
 	initialize_game_window();
+	initialize_scenery();
 
 	return;
 }
-
-long NetGetNetTime(void);
 
 short update_world(
 	void)
@@ -65,6 +71,7 @@ short update_world(
 	short lowest_time, highest_time;
 	short i, time_elapsed;
 	short player_index;
+	boolean game_over= FALSE;
 
 	/* find who has the most and the least queued action flags (we can only advance the world
 		as far as we have action flags for every player).  the difference between the most and
@@ -93,6 +100,7 @@ short update_world(
 	for (i=0;i<time_elapsed;++i)
 	{
 		update_lights();
+		update_medias();
 		update_platforms();
 		
 		update_control_panels(); // don't put after update_players
@@ -101,21 +109,36 @@ short update_world(
 		move_monsters();
 		update_effects();
 		recreate_objects();
-	
+		
+		handle_random_sound_image();
+		animate_scenery();
+
+		update_net_game();
+
+		if(check_level_change()) 
+		{
+			time_elapsed= 0; /* So that we don't update things & try to render the world. */
+			break; /* Break if we change the level */
+		}
+		if(game_over= game_is_over()) break;
+		
 		dynamic_world->tick_count+= 1;
 		dynamic_world->game_information.game_time_remaining-= 1;
 	}
 
 	/* Game is over. */
-	if(game_is_over()) game_timed_out();
-
-	if (time_elapsed)
+	if(game_over) 
+	{
+		game_timed_out();
+		time_elapsed= 0;
+	} 
+	else if (time_elapsed)
 	{
 		update_interface(time_elapsed);
 		update_fades();
 	}
 	
-	check_recording_replaying(); // ajr
+	check_recording_replaying();
 
 	return time_elapsed;
 }
@@ -125,7 +148,6 @@ short update_world(
 void leaving_map(
 	void)
 {
-	stop_background_music();
 	
 	remove_all_projectiles();
 	remove_all_nonpersistent_effects();
@@ -140,7 +162,9 @@ void leaving_map(
 		and the stuff we marked as needed to be ditched will be */
 	
 	/* stop counting world ticks */
-	set_keyboard_controller_status(FALSE);
+//	set_keyboard_controller_status(FALSE);
+
+	stop_all_sounds();
 
 	return;
 }
@@ -153,6 +177,8 @@ boolean entering_map(
 {
 	boolean success= TRUE;
 
+	set_fade_effect(NONE);
+
 	/* if any active monsters think they have paths, we'll make them reconsider */
 	initialize_monsters_for_new_level();
 
@@ -164,24 +190,22 @@ boolean entering_map(
 	mark_all_monster_collections(TRUE);
 	mark_player_collections(TRUE);
 	load_collections();
-	
-	if (success)
-	{
-		if (!game_is_networked && get_game_status()==game_in_progress) try_and_display_chapter_screen(dynamic_world->current_level_number);
-	}
 
-	start_background_music(static_world->song_index);
+	load_all_monster_sounds();
+	load_all_game_sounds(static_world->environment_code);
 
 	/* tell the keyboard controller to start recording keyboard flags */
 	if (game_is_networked) success= NetSync(); /* make sure everybody is ready */
-	reset_player_queues();
-	sync_heartbeat_count();
-	set_keyboard_controller_status(TRUE);
 	
 	/* make sure nobody’s holding a weapon illegal in the new environment */
 	check_player_weapons_for_environment_change();
-	
+
+	if (dynamic_world->player_count>1) initialize_net_game();	
 	randomize_scenery_shapes();
+
+//	reset_player_queues(); //¶¶
+//	sync_heartbeat_count();
+//	set_keyboard_controller_status(TRUE);
 
 	if (!success) leaving_map();
 
@@ -194,15 +218,39 @@ boolean entering_map(
 void changed_polygon(
 	short original_polygon_index,
 	short new_polygon_index,
-	boolean object_is_player)
+	short player_index)
 {
 	struct polygon_data *new_polygon= get_polygon_data(new_polygon_index);
+	struct player_data *player= player_index!=NONE ? get_player_data(player_index) : (struct player_data *) NULL;
 	
 	#pragma unused (original_polygon_index)
 	
 	/* Entering this polygon.. */
 	switch (new_polygon->type)
 	{
+		case _polygon_is_visible_monster_trigger:
+			if (player)
+			{
+				activate_nearby_monsters(player->monster_index, player->monster_index,
+					_pass_solid_lines|_activate_deaf_monsters|_use_activation_biases|_activation_cannot_be_avoided);
+			}
+			break;
+		case _polygon_is_invisible_monster_trigger:
+		case _polygon_is_dual_monster_trigger:
+			if (player)
+			{
+				activate_nearby_monsters(player->monster_index, player->monster_index,
+					_pass_solid_lines|_activate_deaf_monsters|_activate_invisible_monsters|_use_activation_biases|_activation_cannot_be_avoided);
+			}
+			break;
+		
+		case _polygon_is_item_trigger:
+			if (player)
+			{
+				trigger_nearby_items(new_polygon_index);
+			}
+			break;
+
 		case _polygon_is_light_on_trigger:
 		case _polygon_is_light_off_trigger:
 			set_light_status(new_polygon->permutation,
@@ -210,15 +258,27 @@ void changed_polygon(
 			break;
 			
 		case _polygon_is_platform:
-			platform_was_entered(new_polygon->permutation, object_is_player);
+			platform_was_entered(new_polygon->permutation, player ? TRUE : FALSE);
 			break;
 		case _polygon_is_platform_on_trigger:
 		case _polygon_is_platform_off_trigger:
-			if (object_is_player)
+			if (player)
 			{
 				try_and_change_platform_state(get_polygon_data(new_polygon->permutation)->permutation,
 					new_polygon->type==_polygon_is_platform_off_trigger ? FALSE : TRUE);
 			}
+			break;
+			
+		case _polygon_must_be_explored:
+			/* When a player enters a must be explored, it now becomes a normal polygon, to allow */
+			/*  for must be explored flags to work across cooperative net games */
+			if(player)
+			{
+				new_polygon->type= _polygon_is_normal;
+			}
+			break;
+			
+		default:
 			break;
 	}
 
@@ -238,7 +298,7 @@ short calculate_level_completion_state(
 		if (live_aliens_on_map()) completion_state= _level_unfinished;
 	}
 	
-	/* if there are any polygons which must be explored and are not on the automap, we’re not done */
+	/* if there are any polygons which must be explored and have not been entered, we’re not done */
 	if (static_world->mission_flags&_mission_exploration)
 	{
 		short polygon_index;
@@ -246,7 +306,7 @@ short calculate_level_completion_state(
 		
 		for (polygon_index= 0, polygon= map_polygons; polygon_index<dynamic_world->polygon_count; ++polygon_index, ++polygon)
 		{
-			if (polygon->type==_polygon_must_be_explored && !POLYGON_IS_IN_AUTOMAP(polygon_index))
+			if (polygon->type==_polygon_must_be_explored)
 			{
 				completion_state= _level_unfinished;
 				break;
@@ -314,6 +374,7 @@ void cause_polygon_damage(
 	struct monster_data *monster= get_monster_data(monster_index);
 	struct object_data *object= get_object_data(monster->object_index);
 
+#if 0
 	if ((polygon->type==_polygon_is_minor_ouch && !(dynamic_world->tick_count&MINOR_OUCH_FREQUENCY) && object->location.z==polygon->floor_height) ||
 		(polygon->type==_polygon_is_major_ouch && !(dynamic_world->tick_count&MAJOR_OUCH_FREQUENCY)))
 	{
@@ -327,6 +388,7 @@ void cause_polygon_damage(
 		
 		damage_monster(monster_index, NONE, NONE, (world_point3d *) NULL, &damage);
 	}
+#endif
 	
 	return;
 }
@@ -338,68 +400,46 @@ void cause_polygon_damage(
 static void game_timed_out(
 	void)
 {
-	/* Currently they all do the same thing.. */
-	switch(GET_GAME_TYPE())
+	if(player_controlling_game())
 	{
-		case _game_of_kill_monsters:
-		case _game_of_tag:
-		case _game_of_carnage:
-		case _game_of_kill_the_man_with_the_ball:
-		case _game_of_capture_the_flag:
-			switch(get_game_status())
-			{
-				case game_in_progress:
-				case user_wants_to_revert_game:
-					set_game_status(user_wants_quit_from_game);
-					break;
-				case replay_in_progress:
-				case user_wants_quit_from_replay:
-					set_game_status(user_wants_quit_from_replay);
-					break;
-				case demo_in_progress:
-				case demo_wants_to_switch_demos:
-					set_game_status(demo_wants_to_switch_demos);
-					break;
-					
-				default:
-					vhalt(csprintf(temporary, "bad game status: #%d", get_game_status()));
-					break;
-			}
-			break;
+		set_game_state(_close_game);
+	} else {
+		set_game_state(_switch_demo);
 	}
 }
 
-static boolean game_is_over(
-	void)
+#define NUMBER_OF_PRELOAD_SOUNDS (sizeof(preload_sounds)/sizeof(short))
+static short preload_sounds[]=
 {
-	boolean game_over= FALSE;
+	_snd_teleport_in,
+	_snd_teleport_out,
+	_snd_bullet_ricochet,
+	_snd_magnum_firing,
+	_snd_assault_rifle_firing,
+	_snd_body_falling,
+	_snd_body_exploding,
+	_snd_bullet_hitting_flesh
+};
 
-	if (GET_GAME_OPTIONS() & _game_has_kill_limit)
-	{
-		struct player_data *player;
-		short player_index, max_players;
+#define NUMBER_OF_PRELOAD_SOUNDS0 (sizeof(preload_sounds0)/sizeof(short))
+static short preload_sounds0[]= {_snd_water, _snd_wind};
 
-		/* Find out if the kill limit has been reached */
-		max_players = dynamic_world->player_count;
-		for(player_index= 0; player_index<max_players; ++player_index)
-		{
-			player= get_player_data(player_index);
-			// make sure we subtract our suicides.
-			if (player->total_damage_given.kills-player->damage_taken[player_index].kills >= dynamic_world->game_information.kill_limit)
-			{
-				// we don't actually want the game to end right away, but give a second or
-				// two to see the player die.
-				dynamic_world->game_information.game_options &= ~_game_has_kill_limit;
-				dynamic_world->game_information.game_time_remaining = 2 * TICKS_PER_SECOND;
-//				game_over= TRUE;
-				break;
-			}
-		}
-	}
-	else if (dynamic_world->game_information.game_time_remaining<=0)
+#define NUMBER_OF_PRELOAD_SOUNDS1 (sizeof(preload_sounds1)/sizeof(short))
+static short preload_sounds1[]= {_snd_lava, _snd_wind};
+
+static void load_all_game_sounds(
+	short environment_code)
+{
+	load_sounds(&preload_sounds, NUMBER_OF_PRELOAD_SOUNDS);
+
+	switch (environment_code)
 	{
-		game_over= TRUE;
+		case 0: load_sounds(&preload_sounds0, NUMBER_OF_PRELOAD_SOUNDS0); break;
+		case 1: load_sounds(&preload_sounds1, NUMBER_OF_PRELOAD_SOUNDS1); break;
+		case 2: break;
+		case 3: break;
+		case 4: break;
 	}
 	
-	return game_over;
+	return;
 }

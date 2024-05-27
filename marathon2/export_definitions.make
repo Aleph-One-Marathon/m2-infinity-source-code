@@ -1,22 +1,28 @@
-# EXPORT_DEFINITIONS.MAKE
-# Saturday, July 3, 1993 8:18:48 AM
+#   File:       patchtest.make
+#   Target:     patchtest
+#   Sources:    patch.c
+#               test.c
+#   Created:    Tuesday, October 25, 1994 10:34:03 PM
 
-# Sunday, October 2, 1994 1:02:49 PM  (Jason')
-#	from NORESNAMES.MAKE
 
-COptions= -i {CSeriesInterfaces} -b2 -r -mbg on -d DEBUG
-Obj= ":objects:misc:"
-Source= :
-{Obj} ƒ {Source}
+COptions= -i {CSeriesInterfaces} -opt full -b2 -r -mbg on -d DEBUG -d PREPROCESSING_CODE -d TERMINAL_EDITOR -mc68020 -k {CSeriesLibraries}
 
-.c.o ƒ .c
-	C {Default}.c {COptions} -o "{Obj}{Default}.c.o"
-
-export_definitions.c.o ƒ export_definitions.make
-
-OBJECTS= {Obj}export_definitions.c.o {CSeriesLibraries}"cseries.debug.lib"
-export_definitions ƒ {OBJECTS}
-	Link -w -c 'MPS ' -t MPST {OBJECTS} -sn STDIO=Main -sn INTENV=Main -sn %A5Init=Main ∂
-		"{Libraries}"Stubs.o "{Libraries}"Runtime.o "{Libraries}"Interface.o "{CLibraries}"StdCLib.o ∂
-		"{CLibraries}"CSANELib.o "{CLibraries}"Math.o "{Libraries}"ToolLibs.o ∂
+OBJECTS = ∂
+		export_definitions.c.o
+		
+export_definitions ƒƒ export_definitions.make  {OBJECTS}
+	Link ∂
+		-t 'MPST' ∂
+		-c 'MPS ' ∂
+		{OBJECTS} ∂
+		"{CLibraries}"StdClib.o ∂
+ 		"{Libraries}"Runtime.o ∂
+ 		"{Libraries}"Interface.o ∂
+		":Objects:Game:68k:Beta:wad.lib" ∂
+		{CSeriesLibraries}cseries.debug.lib ∂
 		-o export_definitions
+	delete export_definitions.c.o
+		
+export_definitions.c.o ƒ export_definitions.make extensions.h ∂
+	weapon_definitions.h projectile_definitions.h monster_definitions.h ∂
+	effect_definitions.h physics_models.h ":Objects:Game:68k:Beta:wad.lib"

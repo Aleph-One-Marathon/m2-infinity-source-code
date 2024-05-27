@@ -21,6 +21,7 @@ typedef short fileref; /* File descriptor, for portability */
 
 /* ------------- file error codes! */
 enum {
+	errHitFileEOF= -39,
 	errFileNotFound= -43
 };
 
@@ -36,6 +37,8 @@ void close_file(fileref refnum);
 
 unsigned long get_fpos(fileref refnum);
 FileError set_fpos(fileref refnum, unsigned long offset);
+
+FileError set_eof(fileref refnum, unsigned long offset);
 
 unsigned long get_file_length(fileref refnum);
 
