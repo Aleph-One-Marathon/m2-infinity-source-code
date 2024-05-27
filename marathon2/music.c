@@ -165,7 +165,7 @@ void queue_song(
 				assert(music_state->state==_no_song_playing);
 		
 				/* Must be done everytime in case Jason killed it in sound.c */
-				music_state->channel->userInfo= music_state;
+				music_state->channel->userInfo= (long) music_state;
 				music_state->song_index= song_index;
 				music_state->state= _delaying_for_loop;
 				music_state->phase= 1;
@@ -208,7 +208,7 @@ void music_idle_proc(
 					OSErr error;
 
 					music_state->sound_buffer_size= kDefaultSoundBufferSize;
-					music_state->sound_buffer= malloc(music_state->sound_buffer_size);
+					music_state->sound_buffer= (Ptr)malloc(music_state->sound_buffer_size);
 					if (music_state->sound_buffer)
 					{
 						assert(music_state->channel);					
@@ -398,7 +398,7 @@ static void allocate_music_channel(
 #include "world.h"
 #include "map.h"
 #include "shell.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "preferences.h"
 
 /* Non reusable stuff */

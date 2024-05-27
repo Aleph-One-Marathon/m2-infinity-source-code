@@ -27,4 +27,5 @@ struct overhead_map_data
 	boolean draw_everything;
 };
 
+void initialize_overhead_map(void);
 void _render_overhead_map(struct overhead_map_data *data);

@@ -1,3 +1,5 @@
+#ifndef __SHELL_H__
+#define __SHELL_H__
 /*
 SHELL.H
 Saturday, August 22, 1992 2:18:48 PM
@@ -54,14 +56,14 @@ struct screen_mode_data
 	short bit_depth;  // currently 8 or 16
 	short gamma_level;
 	
-	short unused[8];
+	short unused[6];	// two shorts removed for preferences use
 };
 
 #define NUMBER_OF_KEYS 21
 #define NUMBER_UNUSED_KEYS 10
 
 #define PREFERENCES_VERSION 17
-#define PREFERENCES_CREATOR '52.4'
+#define PREFERENCES_CREATOR '26.∞'
 #define PREFERENCES_TYPE 'pref'
 #define PREFERENCES_NAME_LENGTH 32
 
@@ -70,7 +72,8 @@ enum // input devices
 	_keyboard_or_game_pad,
 	_mouse_yaw_pitch,
 	_mouse_yaw_velocity,
-	_cybermaxx_input  // only put "_input" here because it was defined elsewhere.
+	_cybermaxx_input, 						// only put "_input" here because it was defined elsewhere.
+	_input_sprocket_yaw_pitch,
 };
 
 struct system_information_data
@@ -82,11 +85,27 @@ struct system_information_data
 	boolean machine_is_68040;
 	boolean machine_is_ppc;
 	boolean machine_has_network_memory;
+#ifdef SUPPORT_INPUT_SPROCKET
+	boolean has_input_sprocket;
+#endif
+#ifdef SUPPORT_DRAW_SPROCKET
+	boolean has_draw_sprocket;
+#endif
 };
 
 /* ---------- globals */
 
 extern struct system_information_data *system_information;
+#ifdef SUPPORT_INPUT_SPROCKET
+extern boolean use_input_sprocket;
+
+#if defined(envppc) && defined(__INPUTSPROCKET__)
+extern ISpElementReference *input_sprocket_elements;
+#endif
+#endif
+#ifdef SUPPORT_DRAW_SPROCKET
+extern boolean use_draw_sprocket;
+#endif
 
 /* ---------- prototypes/SHELL.C */
 
@@ -112,3 +131,5 @@ boolean has_cheat_modifiers(EventRecord *event);
 
 /* ---------- prototypes/PREFERENCES.C */
 void load_environment_from_preferences(void);
+
+#endif

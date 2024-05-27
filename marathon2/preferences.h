@@ -9,6 +9,8 @@
 struct graphics_preferences_data
 {
 	struct screen_mode_data screen_mode;
+	boolean do_resolution_switching;
+	byte unused[3];
 	GDSpec device_spec;
 };
 

@@ -395,7 +395,7 @@ world_point2d *path_peek(
 	if (path->step_count!=NONE)
 	{
 		*step_count= path->step_count;
-		points= &path->points;
+		points= (world_point2d *) &path->points;
 	}
 	
 	return points;

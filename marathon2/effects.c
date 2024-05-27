@@ -15,7 +15,7 @@ Wednesday, February 1, 1995 12:58:17 AM  (Jason')
 #include "map.h"
 #include "interface.h"
 #include "effects.h"
-#include "sound.h"
+#include "game_sound.h"
 
 #ifdef mpwc
 #pragma segment objects

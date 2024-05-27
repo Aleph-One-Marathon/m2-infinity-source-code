@@ -27,7 +27,8 @@ Future Options:
 
 // Note that level_transition_malloc is specific to marathon...
 
-#include "cseries.h"
+#include "macintosh_cseries.h"
+
 #include <string.h>
 
 #include "wad.h"
@@ -106,7 +107,7 @@ boolean read_wad_header(
 		set_game_error(systemError, error);
 		success= FALSE;
 	} else {
-		if(header->version>CURRENT_WADFILE_VERSION)
+		if(header->version>CURRENT_WADFILE_VERSION && header->version!=INFINITY_WADFILE_VERSION)
 		{
 			set_game_error(gameError, errUnknownWadVersion);
 			success= FALSE;
@@ -487,7 +488,7 @@ void fill_default_wad_header(
 	header->version= wadfile_version;
 	header->data_version= data_version;
 	memcpy(header->file_name, file->name, file->name[0]+1);
-	p2cstr(header->file_name);
+	p2cstr((StringPtr)header->file_name);
 	header->wad_count= wad_count;
 	header->application_specific_directory_data_size= application_directory_data_size;					
 
@@ -564,7 +565,7 @@ void *get_indexed_directory_data(
 	short index,
 	void *directories)
 {
-	byte *data_ptr= directories;
+	byte *data_ptr= (byte *)directories;
 	short base_entry_size= get_directory_base_length(header);
 
 	assert(header->version>=WADFILE_HAS_DIRECTORY_ENTRY);
@@ -583,7 +584,7 @@ void set_indexed_directory_offset_and_length(
 	long length,
 	short wad_index)
 {
-	byte *data_ptr= entries;
+	byte *data_ptr= (byte *)entries;
 	struct directory_entry *entry;
 	long data_offset;
 
@@ -616,7 +617,7 @@ void *read_directory_data(
 	assert(header->version>=WADFILE_HAS_DIRECTORY_ENTRY);
 	
 	size= get_size_of_directory_data(header);
-	data= malloc(size);
+	data= (byte *)malloc(size);
 	if(data)
 	{
 		FileError error;
@@ -909,7 +910,7 @@ void *get_flat_data(
 		/* Read the file */
 		success= read_wad_header(file_handle, &header);
 
-		if (success);
+		if (success)
 		{
 			long length;
 			FileError error= 0;
@@ -981,7 +982,7 @@ struct wad_data *inflate_flat_data(
 	assert(raw_length==d->length-sizeof(struct encapsulated_wad_data));
 	
 	/* Now inflate.. */
-	wad= convert_wad_from_raw(header, data, sizeof(struct encapsulated_wad_data), raw_length);
+	wad= (struct wad_data *)convert_wad_from_raw(header, (byte *)data, sizeof(struct encapsulated_wad_data), raw_length);
 	
 	return wad;
 }
@@ -1073,6 +1074,7 @@ static long calculate_directory_offset(
 			assert(header->application_specific_directory_data_size==0);
 		case WADFILE_HAS_DIRECTORY_ENTRY:
 		case WADFILE_SUPPORTS_OVERLAYS:
+		case INFINITY_WADFILE_VERSION:
 			assert(header->application_specific_directory_data_size>=0);
 			unit_size= header->application_specific_directory_data_size+get_directory_base_length(header);
 			additional_offset= header->application_specific_directory_data_size;
@@ -1118,7 +1120,7 @@ static short get_directory_base_length(
 	short size;
 	
 	assert(header);
-	assert(header->version<=CURRENT_WADFILE_VERSION);
+	assert(header->version<=CURRENT_WADFILE_VERSION || header->version==INFINITY_WADFILE_VERSION);
 
 	switch(header->version)
 	{
@@ -1222,7 +1224,7 @@ static FileError read_indexed_wad_from_file_into_buffer(
 
 		/* Veracity Check */
 		/* ! an error, it has a length non-zero and calculated != actual */
-		assert(entry.length==calculate_raw_wad_length(header, buffer));
+		assert(entry.length==calculate_raw_wad_length(header, (byte *)buffer));
 	}
 	
 	return error;
@@ -1520,7 +1522,7 @@ static struct wad_internal_data *allocate_internal_data_for_file_id(
 	/* Make sure it isn't already allocated */
 	assert(!internal_data[actual_index]);
 
-	internal_data[actual_index]= malloc(sizeof(struct wad_internal_data));
+	internal_data[actual_index]= (struct wad_internal_data *)malloc(sizeof(struct wad_internal_data));
 	if(!internal_data[actual_index]) alert_user(fatalError, strERRORS, outOfMemory, memory_error());
 
 	/* If we got it.. */

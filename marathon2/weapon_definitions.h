@@ -66,11 +66,15 @@ enum {
 	_flamethrower_idle,
 	_flamethrower_transit,
 	_flamethrower_firing,
-	_assault_rifle_shell_casing,
 	_pistol_shell_casing,
+	_assault_rifle_shell_casing,
 	_fusion_charged,
 	_alien_weapon_idle,
-	_alien_weapon_firing
+	_alien_weapon_firing,
+	_smg_idle,
+	_smg_firing,
+	_smg_reloading,
+	_smg_shell_casing
 };
 
 /* ---------- shell casings */
@@ -81,6 +85,7 @@ enum // shell casing types
 	_shell_casing_pistol,
 	_shell_casing_pistol_left,
 	_shell_casing_pistol_right,
+	_shell_casing_smg,
 	
 	NUMBER_OF_SHELL_CASING_TYPES
 };
@@ -94,10 +99,11 @@ struct shell_casing_definition
 	fixed dvx, dvy;
 };
 
+#ifndef DONT_COMPILE_DEFINITIONS
 struct shell_casing_definition shell_casing_definitions[NUMBER_OF_SHELL_CASING_TYPES]=
 {
 	{ // _shell_casing_assault_rifle,
-		_collection_weapons_in_hand, 19, /* collection, shape */
+		_collection_weapons_in_hand, _assault_rifle_shell_casing, /* collection, shape */
 		
 		FIXED_ONE/2 + FIXED_ONE/6, FIXED_ONE/8, /* x0, y0 */
 		FIXED_ONE/8, FIXED_ONE/32, /* vx0, vy0 */
@@ -105,7 +111,7 @@ struct shell_casing_definition shell_casing_definitions[NUMBER_OF_SHELL_CASING_T
 	},
 	
 	{ // _shell_casing_pistol_center
-		_collection_weapons_in_hand, 18, /* collection, shape */
+		_collection_weapons_in_hand, _pistol_shell_casing, /* collection, shape */
 		
 		FIXED_ONE/2 + FIXED_ONE/8, FIXED_ONE/4, /* x0, y0 */
 		FIXED_ONE/16, FIXED_ONE/32, /* vx0, vy0 */
@@ -113,7 +119,7 @@ struct shell_casing_definition shell_casing_definitions[NUMBER_OF_SHELL_CASING_T
 	},
 	
 	{ // _shell_casing_pistol_left
-		_collection_weapons_in_hand, 18, /* collection, shape */
+		_collection_weapons_in_hand, _pistol_shell_casing, /* collection, shape */
 		
 		FIXED_ONE/2 - FIXED_ONE/4, FIXED_ONE/4, /* x0, y0 */
 		- FIXED_ONE/16, FIXED_ONE/32, /* vx0, vy0 */
@@ -121,13 +127,22 @@ struct shell_casing_definition shell_casing_definitions[NUMBER_OF_SHELL_CASING_T
 	},
 	
 	{ // _shell_casing_pistol_right
-		_collection_weapons_in_hand, 18, /* collection, shape */
+		_collection_weapons_in_hand, _pistol_shell_casing, /* collection, shape */
 		
 		FIXED_ONE/2 + FIXED_ONE/4, FIXED_ONE/4, /* x0, y0 */
 		FIXED_ONE/16, FIXED_ONE/32, /* vx0, vy0 */
 		0, -FIXED_ONE/400, /* dvx, dvy */
 	},
+
+	{ // _shell_casing_smg,
+		_collection_weapons_in_hand, _smg_shell_casing, /* collection, shape */
+		
+		FIXED_ONE/2 + FIXED_ONE/6, FIXED_ONE/8, /* x0, y0 */
+		FIXED_ONE/8, FIXED_ONE/32, /* vx0, vy0 */
+		0, -FIXED_ONE/256, /* dvx, dvy */
+	},
 };
+#endif
 
 /* ---------- structures */
 
@@ -185,19 +200,24 @@ struct weapon_definition {
 
 /* ------------------------ globals */
 
+#ifndef DONT_COMPILE_DEFINITIONS
 short weapon_ordering_array[]= {
 	_weapon_fist,
 	_weapon_pistol,
 	_weapon_plasma_pistol,
 	_weapon_shotgun,
 	_weapon_assault_rifle,
+	_weapon_smg,
 	_weapon_flamethrower,
 	_weapon_missile_launcher,
 	_weapon_alien_shotgun,
-	_weapon_ball
+	_weapon_ball,
 };
+#endif
 
 #define NUMBER_OF_WEAPONS (sizeof(weapon_definitions)/sizeof(struct weapon_definition))
+
+#ifndef DONT_COMPILE_DEFINITIONS
 struct weapon_definition weapon_definitions[]=
 {
 	/* Fist*/
@@ -1003,5 +1023,95 @@ struct weapon_definition weapon_definitions[]=
 				0
 			}
 		}
+	},
+
+	/* The New SMG. */
+	{
+		/* item type, powerup type, item class, item flags */
+		_i_smg, NONE, _normal_class, _weapon_is_automatic | _weapon_fires_under_media,
+
+		3*FIXED_ONE/4, TICKS_PER_SECOND/5, /* firing intensity, firing decay */
+
+		/* idle height, bob amplitude, kick height, reload height */
+		FIXED_ONE+FIXED_ONE/6, FIXED_ONE/35, FIXED_ONE/16, 3*FIXED_ONE/4,
+
+		/* horizontal positioning.. */
+		FIXED_ONE_HALF, 0,
+		
+		/* collection, idle, firing, reloading shapes; shell casing, charging, charged */
+		_weapon_in_hand_collection,
+		_smg_idle, _smg_firing, _smg_reloading,	
+		
+		NONE,
+		NONE, NONE,
+
+		/* ready/await/load/finish/powerup rounds ticks */
+		TICKS_PER_SECOND/2, TICKS_PER_SECOND/3, TICKS_PER_SECOND/3, TICKS_PER_SECOND/3, 0,
+
+		{
+			{
+				/* rounds per magazine */
+				32, 
+	
+				/* Ammunition type */
+				_i_smg_ammo, 
+				
+				/* Ticks per round, recovery ticks, charging ticks */
+				NONE, 0, 0,
+				
+				/* recoil magnitude */
+				5,
+				
+				/* firing, click, charging, shell casing, reload sound */
+				_snd_smg_firing, _snd_empty_gun, NONE, _snd_assault_rifle_shell_casings, _snd_smg_reloading, NONE,
+				
+				/* projectile type */
+				_projectile_smg_bullet,
+				
+				/* theta error */
+				3,
+				
+				/* dx, dz */
+				0, -NORMAL_WEAPON_DZ,
+				
+				/* shell casing type */
+				_shell_casing_smg,
+
+				/* burst count */
+				2
+			},
+			{
+				/* rounds per magazine */
+				32, 
+	
+				/* Ammunition type */
+				_i_smg_ammo, 
+				
+				/* Ticks per round, recovery ticks, charging ticks */
+				NONE, 0, 0,
+				
+				/* recoil magnitude */
+				5,
+				
+				/* firing, click, charging, shell casing, reload sound */
+				_snd_smg_firing, _snd_empty_gun, NONE, _snd_assault_rifle_shell_casings, _snd_smg_reloading, NONE,
+				
+				/* projectile type */
+				_projectile_smg_bullet,
+				
+				/* theta error */
+				3,
+				
+				/* dx, dz */
+				0, -NORMAL_WEAPON_DZ,
+				
+				/* shell casing type */
+				_shell_casing_smg,
+
+				/* burst count */
+				2
+			}
+		}
 	}
 };
+#endif

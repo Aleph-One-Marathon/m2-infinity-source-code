@@ -1,3 +1,6 @@
+#ifndef __NETWORK_H__
+#define __NETWORK_H__
+
 /*
 NETWORK.H
 Tuesday, June 21, 1994 3:26:46 PM
@@ -122,3 +125,5 @@ void display_net_game_stats(void);
 short NetAddDistributionFunction(NetDistributionProc proc, boolean lossy);
 void NetDistributeInformation(short type, void *buffer, short buffer_size, boolean send_to_self);
 void NetRemoveDistributionFunction(short type);
+
+#endif

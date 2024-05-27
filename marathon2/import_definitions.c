@@ -15,6 +15,22 @@ Sunday, October 2, 1994 1:25:23 PM  (Jason')
 
 /* ---------- globals */
 
+#define DONT_COMPILE_DEFINITIONS
+
+#include "monsters.h"
+#include "monster_definitions.h"
+
+#include "projectiles.h"
+#include "projectile_definitions.h"
+
+#include "effects.h"
+#include "effect_definitions.h"
+
+#include "weapons.h"
+#include "weapon_definitions.h"
+
+#include "physics_models.h"
+
 /* sadly extern'ed from their respective files */
 extern byte monster_definitions[];
 extern byte projectile_definitions[];
@@ -22,7 +38,7 @@ extern byte effect_definitions[];
 extern byte weapon_definitions[];
 extern byte physics_models[];
 
-#define IMPORT_STRUCTURE
+#define INCLUDE_STRUCTURES
 #include "extensions.h"
 
 /* ---------- local globals */
@@ -30,7 +46,6 @@ static FileDesc physics_file;
 
 /* ---------- local prototype */
 static struct wad_data *get_physics_wad_data(boolean *bungie_physics);
-static void import_physics_wad_data(struct wad_data *wad);
 
 /* ---------- code */
 void set_physics_file(
@@ -112,6 +127,51 @@ void process_network_physics_model(
 	return;
 }
 
+void import_physics_wad_data(
+	struct wad_data *wad)
+{
+	short index;
+	
+	for(index= 0; index<NUMBER_OF_DEFINITIONS; ++index)
+	{
+		long length;
+		struct definition_data *definition= definitions+index;
+		void *data;			
+
+		/* Given a wad, extract the given tag from it */
+		data= extract_type_from_wad(wad, definition->tag, &length);
+		if(data)
+		{
+			/* Copy it into the proper array */
+			memcpy(definition->data, data, length);
+		}
+	}
+	
+	return;
+}
+
+void *get_physics_array_and_size(
+	long tag, 
+	long *size)
+{
+	short index;
+	void *array;
+
+	*size= 0;	
+	for(index= 0; index<NUMBER_OF_DEFINITIONS; ++index)
+	{
+		struct definition_data *definition= definitions+index;
+		if(definition->tag==tag)
+		{
+			array= definition->data;
+			*size= definition->count*definition->size;
+		}
+	}
+	assert(array);
+	
+	return array;
+}
+
 /* --------- local code */
 static struct wad_data *get_physics_wad_data(
 	boolean *bungie_physics)
@@ -149,27 +209,3 @@ static struct wad_data *get_physics_wad_data(
 
 	return wad;
 }
-
-static void import_physics_wad_data(
-	struct wad_data *wad)
-{
-	short index;
-	
-	for(index= 0; index<NUMBER_OF_DEFINITIONS; ++index)
-	{
-		long length;
-		struct definition_data *definition= definitions+index;
-		void *data;			
-
-		/* Given a wad, extract the given tag from it */
-		data= extract_type_from_wad(wad, definition->tag, &length);
-		if(data)
-		{
-			/* Copy it into the proper array */
-			memcpy(definition->data, data, length);
-		}
-	}
-	
-	return;
-}
-

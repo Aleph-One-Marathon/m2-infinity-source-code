@@ -39,7 +39,7 @@ enum /* collection numbers */
 	_collection_defender, // 10
 	_collection_yeti, // 11
 	_collection_civilian, // 12
-	_collection_madd, // 13
+	_collection_vacuum_civilian, // 13
 	_collection_enforcer, // 14
 	_collection_hummer, // 15
 	_collection_compiler, // 16

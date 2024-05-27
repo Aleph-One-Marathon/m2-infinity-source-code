@@ -10,6 +10,8 @@ Thursday, March 23, 1995 8:53:35 PM  (Jason')
 #include "map.h"
 #include "flood_map.h"
 
+#include <string.h>
+
 /*
 maps of one polygon don’t have their impassability information computed
 
@@ -59,7 +61,7 @@ static void find_intersecting_endpoints_and_lines(short polygon_index, world_dis
 	short *line_indexes, short *line_count, short *endpoint_indexes, short *endpoint_count,
 	short *polygon_indexes, short *polygon_count);
 static long intersecting_flood_proc(short source_polygon_index, short line_index,
-	short destination_polygon_index, struct intersecting_flood_data *data);
+	short destination_polygon_index, void *data);
 
 static void precalculate_polygon_sound_sources(void);
 
@@ -565,6 +567,21 @@ static void find_intersecting_endpoints_and_lines(
 	data.polygon_count= 0;
 	data.minimum_separation_squared= minimum_separation*minimum_separation;
 	find_center_of_polygon(polygon_index, &data.center);
+	
+	{
+		struct polygon_data *polygon= get_polygon_data(polygon_index);
+		short i;
+		
+		for (i= 0; i<polygon->vertex_count; ++i)
+		{
+			short adjacent_polygon_index= find_adjacent_polygon(polygon_index, polygon->line_indexes[i]);
+			
+			if (adjacent_polygon_index!=NONE)
+			{
+				data.polygon_indexes[data.polygon_count++]= adjacent_polygon_index;
+			}
+		}
+	}
 
 	polygon_index= flood_map(polygon_index, LONG_MAX, intersecting_flood_proc, _breadth_first, &data);
 	while (polygon_index!=NONE)
@@ -586,6 +603,7 @@ static long intersecting_flood_proc(
 	short destination_polygon_index,
 	struct intersecting_flood_data *data)
 {
+	struct intersecting_flood_data data= *(struct intersecting_flood_data *)generic_data;
 	struct polygon_data *polygon= get_polygon_data(source_polygon_index);
 	struct polygon_data *original_polygon= get_polygon_data(data->original_polygon_index);
 	boolean keep_searching= FALSE; /* don’t flood any deeper unless we find something close enough */

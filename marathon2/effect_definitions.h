@@ -28,6 +28,7 @@ struct effect_definition
 
 /* ---------- effect definitions */
 
+#ifndef DONT_COMPILE_DEFINITIONS
 struct effect_definition effect_definitions[NUMBER_OF_EFFECT_TYPES]=
 {
 	/* rocket explosion, contrail */
@@ -160,4 +161,15 @@ struct effect_definition effect_definitions[NUMBER_OF_EFFECT_TYPES]=
 	/* _effect_juggernaut_spark, _effect_juggernaut_missile_contrail */
 	{_collection_juggernaut, 3, _normal_frequency, _end_when_animation_loops, 0, NONE},
 	{_collection_rocket, 24, _normal_frequency, _end_when_animation_loops, 0, NONE},
+
+	/* _effect_small_jjaro_splash, _effect_medium_jjaro_splash, _effect_large_jjaro_splash, _effect_large_jjaro_emergence */
+	{_collection_scenery4, 0, _normal_frequency, _end_when_animation_loops|_media_effect, 0, NONE},
+	{_collection_scenery4, 1, _normal_frequency, _end_when_animation_loops|_media_effect, 0, NONE},
+	{_collection_scenery4, 2, _normal_frequency, _end_when_animation_loops|_sound_only, 0, NONE},
+	{_collection_scenery4, 3, _normal_frequency, _end_when_animation_loops|_sound_only, 0, NONE},
+
+	/* vacuum civilian blood splash, vacuum assimilated civilian blood splash */
+	{_collection_vacuum_civilian, 7, _normal_frequency, _end_when_animation_loops, 0, NONE},
+	{BUILD_COLLECTION(_collection_vacuum_civilian, 3), 12, _normal_frequency, _end_when_animation_loops, 0, NONE},
 };
+#endif

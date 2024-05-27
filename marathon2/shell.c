@@ -37,6 +37,19 @@ Thursday, September 28, 1995 7:37:12 PM
 #include "macintosh_cseries.h"
 #include <appleevents.h>
 #include <aliases.h>
+#ifdef SUPPORT_INPUT_SPROCKET
+// we understand and use the grouping byte
+#define USE_OLD_ISPNEED_STRUCT 0
+#include "InputSprocket.h"
+#endif
+
+#ifdef SUPPORT_DRAW_SPROCKET
+#include "DrawSprocket.h"
+#endif
+
+#if defined(SUPPORT_INPUT_SPROCKET) || defined(SUPPORT_DRAW_SPROCKET)
+#include <CodeFragments.h>
+#endif
 
 #include "my32bqd.h"
 
@@ -46,7 +59,7 @@ Thursday, September 28, 1995 7:37:12 PM
 #include "render.h"
 #include "shell.h"
 #include "interface.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "fades.h"
 #include "screen.h"
 
@@ -61,9 +74,11 @@ Thursday, September 28, 1995 7:37:12 PM
 #include "network_sound.h"
 #include "mouse.h"
 #include "screen_drawing.h"
+#include "overhead_map.h"
 #include "computer_interface.h"
 #include "game_wad.h" /* yuck. •• */
 #include "game_window.h" /* for draw_interface() */
+#include "wad.h"
 #include "extensions.h"
 
 #include "items.h"
@@ -88,17 +103,36 @@ Thursday, September 28, 1995 7:37:12 PM
 /* ---------- constants */
 #define alrtQUIT_FOR_SURE 138
 
+#ifdef COMPILE_TIME
+#define DAYS_TO_EXPIRATION 18
+#define SECONDS_TO_EXPIRATION (DAYS_TO_EXPIRATION * 60 * 60 * 24)
+#define EXPIRATION_TIME (COMPILE_TIME + SECONDS_TO_EXPIRATION)
+#endif
+
 #define kMINIMUM_MUSIC_HEAP (4*MEG)
 #define kMINIMUM_SOUND_HEAP (3*MEG)
 
 struct system_information_data *system_information;
 
-#ifdef envppc
+#ifndef __MWERKS__
 QDGlobals qd;
 #endif
 
 #ifdef PERFORMANCE
 TP2PerfGlobals perf_globals;
+#endif
+
+#ifdef SUPPORT_INPUT_SPROCKET
+#include "macintosh_input.h"
+
+ISpElementReference *input_sprocket_elements;
+boolean use_input_sprocket= FALSE;
+
+#include "input_sprocket_needs.h"
+#endif
+
+#ifdef SUPPORT_DRAW_SPROCKET
+boolean use_draw_sprocket= FALSE;
 #endif
 
 extern long first_frame_tick, frame_count; /* for determining frame rate */
@@ -139,6 +173,11 @@ static void handle_keyword(short type_of_cheat);
 #endif
 
 boolean is_keypad(short keycode);
+
+#ifdef SUPPORT_INPUT_SPROCKET
+static void input_sprocket_handler(void);
+static void enable_input_sprocket_device_class(OSType deviceClass, boolean enable);
+#endif
 
 /* ---------- code */
 
@@ -181,6 +220,31 @@ void *level_transition_malloc(
 }
 
 /* ---------- private code */
+#ifdef SUPPORT_DRAW_SPROCKET
+static void draw_sprocket_handler(
+	void)
+{
+	OSStatus err= noErr;
+	
+	err= DSpShutdown();
+	
+	return;
+}
+#endif
+
+#ifdef SUPPORT_INPUT_SPROCKET
+static void input_sprocket_handler(
+	void)
+{
+	OSStatus err= noErr;
+	
+	err= ISpStop();
+	ISpElement_DisposeVirtual(NUMBER_OF_INPUT_SPROCKET_NEEDS, input_sprocket_elements);
+	free(input_sprocket_elements);
+	
+	return;
+}
+#endif
 
 static void initialize_application_heap(
 	void)
@@ -199,7 +263,7 @@ static void initialize_application_heap(
 	InitDialogs(0); /* resume procedure ignored for multifinder and >=system 7.0 */
 	InitCursor();
 
-#ifdef DEBUG
+#if defined(DEBUG) && !defined(GAMMA)
 	initialize_debugger(TRUE);
 #endif
 
@@ -224,6 +288,71 @@ static void initialize_application_heap(
 	GetDateTime(&player_preferences->last_time_ran);
 	write_preferences();
 
+#if defined(EXPIRATION_TIME) && !defined(AI_LIBRARY)
+	{
+		Handle         some_resource;
+		unsigned long  current_time;
+		
+		// we’re assuming that beta copies are all fat versions
+		some_resource = GetResource('SOCK', 128); // the socket listener
+		if (!some_resource)
+		{
+			alert_user(fatalError, strERRORS, copyHasExpired, 0);
+			ExitToShell();
+		}
+
+		GetDateTime(&current_time);
+		if (current_time < player_preferences->last_time_ran || current_time > EXPIRATION_TIME)
+		{
+			some_resource= GetResource('CODE', 8); // the “render” segment
+			if (some_resource) RmveResource(some_resource);
+			some_resource= GetResource('SOCK', 128); // the socket listener
+			if (some_resource) RmveResource(some_resource);
+			UpdateResFile(CurResFile());
+			alert_user(fatalError, strERRORS, copyHasExpired, 0);
+			ExitToShell(); // fool the cracker. heh.
+		}
+
+	}
+#endif
+
+#ifdef SUPPORT_INPUT_SPROCKET
+	if (system_information->has_input_sprocket)
+	{
+		OSStatus err= noErr;
+
+		// turn on keyboard, mouse, speech and ticklish classes and ignore errors
+		ISpDevices_ActivateClass(kISpDeviceClass_Mouse);
+		ISpDevices_ActivateClass(kISpDeviceClass_Keyboard);
+		ISpDevices_ActivateClass(kISpDeviceClass_SpeechRecognition);
+		ISpDevices_ActivateClass(kISpDeviceClass_Tickle);
+		
+		input_sprocket_elements= (ISpElementReference *) malloc(sizeof(ISpElementReference) * NUMBER_OF_INPUT_SPROCKET_NEEDS);
+		assert(input_sprocket_elements);
+		err= ISpElement_NewVirtualFromNeeds(NUMBER_OF_INPUT_SPROCKET_NEEDS, input_sprocket_needs, input_sprocket_elements, 0);
+		if (err) dprintf("ISpElementVirtuals err=%d",err);
+		err= ISpInit(NUMBER_OF_INPUT_SPROCKET_NEEDS, input_sprocket_needs, input_sprocket_elements, '52.4', 'fooc', 0, 0, 0);
+		if (err) dprintf("ISpInit err=%d",err); 
+		atexit(input_sprocket_handler);
+		err= ISpSuspend();	// start out suspended, resume when we begin the game
+	
+		if (input_preferences->input_device)
+		{
+			use_input_sprocket = true;
+		}
+	}
+#endif
+
+#ifdef SUPPORT_DRAW_SPROCKET
+	if (system_information->has_draw_sprocket)
+	{
+		OSStatus err;
+		
+		err= DSpStartup();
+		atexit(draw_sprocket_handler);
+	}
+#endif
+
 	initialize_my_32bqd();
 	verify_environment();
 
@@ -235,6 +364,7 @@ static void initialize_application_heap(
 	initialize_screen(&graphics_preferences->screen_mode);
 	initialize_marathon();
 	initialize_screen_drawing();
+	initialize_overhead_map();
 	initialize_terminal_manager();
 	initialize_shape_handler();
 	initialize_fades();
@@ -398,18 +528,39 @@ void handle_game_key(
 						graphics_preferences->screen_mode.texture_ceiling = !graphics_preferences->screen_mode.texture_ceiling;
 						changed_screen_mode = changed_prefs = TRUE;
 						break;
+#else
+					// PowerPC-only	secret no frame rate limit
+					case kcF6:
+						no_frame_rate_limit= !no_frame_rate_limit;
+						break;
 #endif
 					case kcF9:
 						if(event->modifiers & shiftKey)
 						{
 							short keys[NUMBER_OF_KEYS];
 				
-							set_default_keys(&keys, 0);
-							set_keys(&keys);
+							set_default_keys((short *) &keys, 0);
+							set_keys((short *) &keys);
 						}
 						break;
 						
 					case kcF10:
+#ifdef envppc
+						// secret ludicrous speed mode
+						if (event->modifiers & shiftKey)
+						{
+							if (game_is_networked)
+							{
+								toggle_ludicrous_speed(FALSE);
+								toggle_sound_pitch_modifier_override(FALSE);
+							}
+							else
+							{
+								toggle_ludicrous_speed(TRUE);
+								toggle_sound_pitch_modifier_override(TRUE);
+							}
+						}
+#endif
 						break;
 						
 					case kcF11:
@@ -572,9 +723,18 @@ static pascal OSErr handle_open_document(
 								break;
 								
 							case SAVE_GAME_TYPE:
-								if(load_and_start_game((FileDesc *) &myFSS))
+#ifndef TRILOGY
+								if (serial_preferences->network_only)
 								{
-									done= TRUE;
+									alert_user(infoError, strERRORS, networkOnlySerialNumber, 0);
+								}
+								else
+#endif
+								{
+									if(load_and_start_game((FileDesc *) &myFSS))
+									{
+										done= TRUE;
+									}
 								}
 								break;
 								
@@ -621,6 +781,8 @@ static pascal OSErr handle_quit_application(
 	if(err) return err;
 	
 	set_game_state(_quit_game);
+
+	return noErr;
 }
 
 static pascal OSErr handle_print_document(
@@ -749,6 +911,36 @@ static void initialize_system_information(
 		}
 	}
 	
+#ifdef SUPPORT_INPUT_SPROCKET
+	{
+		// assume false, if we linked and have version 1.2 mark as true
+		// we require 1.1 because we use some 1.1 specific calls
+		// and we use 1.2's delta features (which unfortunately crash 1.1)
+		system_information->has_input_sprocket= FALSE;
+		
+		if (ISpGetVersion != kUnresolvedCFragSymbolAddress)
+		{
+			NumVersion inputSprocketVersionStruct = ISpGetVersion();
+			UInt32 inputSprocketVersion = * (UInt32 *) &(inputSprocketVersionStruct);
+		
+			if (inputSprocketVersion > 0x01200000)	// require 1.2 (binary coded decimal)
+			{
+				system_information->has_input_sprocket= TRUE;
+			}
+		}
+	}
+#endif
+#ifdef SUPPORT_DRAW_SPROCKET
+	if ((Ptr)DSpStartup != (Ptr)kUnresolvedCFragSymbolAddress)
+	{
+		system_information->has_draw_sprocket= TRUE;
+	}
+	else
+	{
+		system_information->has_draw_sprocket= FALSE;
+	}
+#endif
+
 	return;
 }
 
@@ -839,7 +1031,8 @@ enum // cheat tags
 	_tag_view,
 	_tag_jump,
 	_tag_aslag,
-	_tag_save
+	_tag_save,
+	_tag_level
 };
 
 /* ---------- resources */
@@ -871,7 +1064,8 @@ static struct keyword_data keywords[]=
 	{_tag_ammo, "AMMO"},
 	{_tag_jump, "QWE"},
 	{_tag_aslag, "SHIT"},
-	{_tag_save, "YOURMOM"}
+	{_tag_save, "YOURMOM"},
+	{_tag_level, "LEVEL"}
 };
 static char keyword_buffer[MAXIMUM_KEYWORD_LENGTH+1];
 
@@ -973,7 +1167,7 @@ static void handle_keyword(
 					_i_plasma_pistol, _i_alien_shotgun, _i_shotgun,
 					_i_assault_rifle_magazine, _i_assault_grenade_magazine, 
 					_i_magnum_magazine, _i_missile_launcher_magazine, _i_flamethrower_canister,
-					_i_plasma_magazine, _i_shotgun_magazine, _i_shotgun };
+					_i_plasma_magazine, _i_shotgun_magazine, _i_shotgun, _i_smg, _i_smg_ammo };
 				short index;
 				
 				for(index= 0; index<sizeof(items)/sizeof(short); ++index)
@@ -1013,6 +1207,16 @@ static void handle_keyword(
 			local_player->suit_energy = 3*PLAYER_MAXIMUM_SUIT_ENERGY;
 			update_interface(NONE);
 			break;
+		
+		case _tag_level:
+			{
+				struct player_data *player= get_player_data(0);
+				int level_number= dynamic_world->current_level_number+1;
+				
+				player->teleporting_destination= -level_number;
+				player->delay_before_teleport= TICKS_PER_SECOND/2;
+			}
+			break;
 			
 		default:
 			cheated= FALSE;
@@ -1039,6 +1243,31 @@ static void handle_keyword(
 }
 #endif
 
+#ifdef SUPPORT_INPUT_SPROCKET
+
+static Boolean check_input_sprocket_button(	ISpElementReference theElement)
+{
+			OSStatus	err;
+			ISpElementEvent input_sprocket_event;
+			Boolean was_input_sprocket_event;
+			
+	err= ISpElement_GetNextEvent(	theElement,
+									sizeof(ISpElementEvent),
+									&input_sprocket_event,
+									&was_input_sprocket_event);
+												
+	if (!err && was_input_sprocket_event && (input_sprocket_event.data == kISpButtonDown))
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
+#endif
+  
 static void main_event_loop(
 	void)
 {
@@ -1052,7 +1281,184 @@ static void main_event_loop(
 		{
 			EventRecord event;
 			boolean got_event= FALSE;
-		
+
+#ifdef SUPPORT_INPUT_SPROCKET
+			unsigned int key_state= 0;
+			boolean changed_screen_mode = FALSE;
+			boolean changed_prefs = FALSE;
+			boolean update_interface = FALSE;
+			
+			if (use_input_sprocket)
+			{
+				ISpTickle();	// give input sprocket time
+				
+				// check slow stuff here
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_quit]))
+				{
+					do_menu_item_command(mGame, iQuitGame, FALSE);
+				}
+				
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_volume_up]))
+				{
+					changed_prefs= adjust_sound_volume_up(sound_preferences, _snd_adjust_volume);
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_volume_down]))
+				{
+					changed_prefs= adjust_sound_volume_down(sound_preferences, _snd_adjust_volume);
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_change_view]))
+				{
+					walk_player_list();
+					render_screen(0);
+				}
+				
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_zoom_map_in]))
+				{
+					zoom_overhead_map_in();
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_zoom_map_out]))
+				{
+					zoom_overhead_map_out();
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_scroll_back_decrement_replay]))
+				{
+					if(player_controlling_game())
+					{
+						scroll_inventory(-1);
+					}
+					else
+					{
+						decrement_replay_speed();
+					}
+
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_scroll_forward_increment_replay]))
+				{
+					if(player_controlling_game())
+					{
+						scroll_inventory(1);
+					}
+					else
+					{
+						increment_replay_speed();
+					}
+				}
+
+#ifdef ALEX_DISABLED
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_toggle_background_tasks]))
+				{
+					toggle_suppression_of_background_tasks();
+				}
+#endif
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_show_fps]))
+				{
+					extern boolean displaying_fps;
+					
+					displaying_fps= !displaying_fps;
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_full_screen]))
+				{
+					graphics_preferences->screen_mode.size = _full_screen;
+					changed_screen_mode = changed_prefs = TRUE;
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_100_percent]))
+				{
+					if(graphics_preferences->screen_mode.size==_full_screen) update_interface= TRUE;
+					graphics_preferences->screen_mode.size = _100_percent;
+					changed_screen_mode = changed_prefs = TRUE;
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_75_percent]))
+				{
+					if(graphics_preferences->screen_mode.size==_full_screen) update_interface= TRUE;
+					graphics_preferences->screen_mode.size = _75_percent;
+					changed_screen_mode = changed_prefs = TRUE;
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_50_percent]))
+				{
+					if(graphics_preferences->screen_mode.size==_full_screen) update_interface= TRUE;
+					graphics_preferences->screen_mode.size = _50_percent;
+					changed_screen_mode = changed_prefs = TRUE;
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_low_res]))
+				{
+					if (graphics_preferences->screen_mode.acceleration != _valkyrie_acceleration)
+					{
+						graphics_preferences->screen_mode.high_resolution = !graphics_preferences->screen_mode.high_resolution;
+						if (graphics_preferences->screen_mode.high_resolution) graphics_preferences->screen_mode.draw_every_other_line= FALSE;
+						changed_screen_mode = changed_prefs = TRUE;
+					}
+				}
+#ifdef ALEX_DISABLED
+#ifdef env68k
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_high_res]))
+				{
+					if (!graphics_preferences->screen_mode.high_resolution && graphics_preferences->screen_mode.acceleration != _valkyrie_acceleration)
+					{
+						graphics_preferences->screen_mode.draw_every_other_line = !graphics_preferences->screen_mode.draw_every_other_line;
+						changed_screen_mode = changed_prefs = TRUE;
+					}
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_texture_floor_toggle]))
+				{
+					graphics_preferences->screen_mode.texture_floor = !graphics_preferences->screen_mode.texture_floor;
+					changed_screen_mode = changed_prefs = TRUE;
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_texture_ceiling_toggle]))
+				{
+					graphics_preferences->screen_mode.texture_ceiling = !graphics_preferences->screen_mode.texture_ceiling;
+					changed_screen_mode = changed_prefs = TRUE;
+				}
+#endif
+
+#ifdef envppc
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_high_res]))
+				{
+						no_frame_rate_limit= !no_frame_rate_limit;
+				}
+#endif
+#endif
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_gamma_plus]))
+				{
+					if (graphics_preferences->screen_mode.gamma_level<NUMBER_OF_GAMMA_LEVELS-1)
+					{
+						graphics_preferences->screen_mode.gamma_level+= 1;
+						change_gamma_level(graphics_preferences->screen_mode.gamma_level);
+						changed_prefs= TRUE;
+					}
+				}
+
+				if (check_input_sprocket_button(input_sprocket_elements[_input_sprocket_gamma_minus]))
+				{
+					if (graphics_preferences->screen_mode.gamma_level > 0)
+					{
+						graphics_preferences->screen_mode.gamma_level-= 1;
+						change_gamma_level(graphics_preferences->screen_mode.gamma_level);
+						changed_prefs= TRUE;
+					}
+				}
+			}
+			
+			if (changed_screen_mode)
+			{
+				change_screen_mode(&graphics_preferences->screen_mode, TRUE);
+				render_screen(0);
+				if(update_interface) draw_interface();
+			}
+			if (changed_prefs) write_preferences();
+
+#endif
 			if(use_waitnext)
 			{
 				got_event= WaitNextEvent(everyEvent, &event, 2, (RgnHandle) NULL);
@@ -1084,15 +1490,19 @@ static void wait_for_highlevel_event(
 	EventRecord event;
 	boolean done= FALSE;
 	
+	// CAF -- this was blocking forever	
+#if !SUPPORT_DRAW_SPROCKET
 	while(!done)
 	{
+#endif
 		if(WaitNextEvent(highLevelEventMask, &event, 0, NULL))
 		{
 			process_event(&event);
 			done= TRUE;
 		}
+#if !SUPPORT_DRAW_SPROCKET
 	}
-
+#endif
 	return;
 }
 
@@ -1137,6 +1547,15 @@ static void process_event(
 	WindowPtr window;
 	short part_code;
 
+	// CAF -- give DSp a chance to handle the event
+#if SUPPORT_DRAW_SPROCKET
+	Boolean theEventWasProcessed = false;
+	
+	DSpProcessEvent( event, &theEventWasProcessed );
+	if( theEventWasProcessed )
+		return;
+#endif
+
 	switch (event->what)
 	{
 		case mouseDown:
@@ -1153,7 +1572,7 @@ static void process_event(
 					break;
 					
 				default:
-					halt();
+					vhalt(csprintf(temporary, "What the hell is part code: %d?", part_code));
 					break;
 			}
 			break;

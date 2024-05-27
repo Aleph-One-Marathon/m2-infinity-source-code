@@ -13,7 +13,7 @@ Tuesday, October 31, 1995 11:02:24 AM (Ryan)
 #include "weapons.h"
 #include "wad.h"
 #include "items.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "media.h"
 #include "tags.h"
 
@@ -27,7 +27,9 @@ Tuesday, October 31, 1995 11:02:24 AM (Ryan)
 #include "effect_definitions.h"
 #include "physics_models.h"
 
+#define INCLUDE_STRUCTURES
 #include "extensions.h"
+#undef INCLUDE_STRUCTURES
 
 /* ---------- private code */
 static boolean create_physics_file(FileDesc *file);
@@ -54,7 +56,7 @@ void main(
 		error= get_my_fsspec(&physics_spec);
 		strcpy(temporary, argv[1]);
 		c2pstr(temporary);
-		error= FSMakeFSSpec(0, 0, temporary, &physics_spec);
+		error= FSMakeFSSpec(0, 0, (StringPtr)temporary, &physics_spec);
 		if(!error || error==fnfErr)
 		{
 			if(!create_physics_file((FileDesc *) &physics_spec))

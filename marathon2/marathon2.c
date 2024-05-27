@@ -28,8 +28,13 @@ Thursday, December 8, 1994 3:58:12 PM  (Jason)
 #include "items.h"
 #include "weapons.h"
 #include "game_window.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "network_games.h"
+
+#ifdef envppc
+#include "portable_files.h"
+#include "vbl.h"
+#endif
 
 #ifdef mpwc
 #pragma segment marathon
@@ -179,6 +184,15 @@ boolean entering_map(
 
 	set_fade_effect(NONE);
 
+#ifdef envppc
+	// make sure that net games aren't cheating
+	if (game_is_networked)
+	{
+		toggle_ludicrous_speed(FALSE);
+		toggle_sound_pitch_modifier_override(FALSE);
+	}
+#endif
+
 	/* if any active monsters think they have paths, we'll make them reconsider */
 	initialize_monsters_for_new_level();
 
@@ -272,12 +286,33 @@ void changed_polygon(
 		case _polygon_must_be_explored:
 			/* When a player enters a must be explored, it now becomes a normal polygon, to allow */
 			/*  for must be explored flags to work across cooperative net games */
-			if(player)
+			if (player)
 			{
 				new_polygon->type= _polygon_is_normal;
 			}
 			break;
-			
+
+#ifdef SCREAMING_METAL			
+		case _polygon_sound_once_trigger:
+			if (player)
+			{
+				if (player_index==local_player_index)
+				{
+					play_local_sound(new_polygon->permutation);
+				}
+				
+				new_polygon->type= _polygon_is_normal;
+			}
+			break;
+		
+		case _polygon_sound_always_trigger:
+			if (player && player_index==local_player_index))
+			{
+				play_local_sound(new_polygon->permutation);
+			}
+			break;
+#endif
+
 		default:
 			break;
 	}
@@ -430,12 +465,12 @@ static short preload_sounds1[]= {_snd_lava, _snd_wind};
 static void load_all_game_sounds(
 	short environment_code)
 {
-	load_sounds(&preload_sounds, NUMBER_OF_PRELOAD_SOUNDS);
+	load_sounds((short *) &preload_sounds, NUMBER_OF_PRELOAD_SOUNDS);
 
 	switch (environment_code)
 	{
-		case 0: load_sounds(&preload_sounds0, NUMBER_OF_PRELOAD_SOUNDS0); break;
-		case 1: load_sounds(&preload_sounds1, NUMBER_OF_PRELOAD_SOUNDS1); break;
+		case 0: load_sounds((short *) &preload_sounds0, NUMBER_OF_PRELOAD_SOUNDS0); break;
+		case 1: load_sounds((short *) &preload_sounds1, NUMBER_OF_PRELOAD_SOUNDS1); break;
 		case 2: break;
 		case 3: break;
 		case 4: break;

@@ -19,6 +19,7 @@ void get_recording_header_data(short *number_of_players, short *level_number, un
 	short *version, struct player_start_data *starts, struct game_data *game_information);
 
 boolean input_controller(void);
+void toggle_ludicrous_speed(boolean ludicrous_speed);
 
 /* ------------ prototypes/VBL_MACINTOSH.C */
 void initialize_keyboard_controller(void);

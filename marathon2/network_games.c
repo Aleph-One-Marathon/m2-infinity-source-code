@@ -12,7 +12,7 @@
 #include "monsters.h"
 #include "network_games.h"
 #include "game_window.h" // for mark_player_network_stats_as_dirty
-#include "sound.h"
+#include "game_sound.h"
 
 /* ----------- #defines */
 #define SINGLE_BALL_COLOR (1)
@@ -255,6 +255,11 @@ boolean player_killed_player(
 					if (dynamic_world->game_player_index!=dead_player_index)
 					{
 						// change of ‘it’
+#if 1
+						struct player_data *player= get_player_data(dead_player_index);
+						
+						play_object_sound(player->object_index, _snd_you_are_it);
+#endif
 						dynamic_world->game_player_index= dead_player_index;
 					}
 				}
@@ -290,6 +295,7 @@ boolean update_net_game(
 				/* These games have no housekeeping associated with them. */
 				break;
 				
+#if 0
 			case _game_of_capture_the_flag:
 				for(player_index= 0; player_index<dynamic_world->player_count; ++player_index)
 				{
@@ -308,7 +314,8 @@ boolean update_net_game(
 					}
 				}
 				break;
-				
+#endif
+
 			case _game_of_king_of_the_hill:
 				for(player_index= 0; player_index<dynamic_world->player_count; ++player_index)
 				{
@@ -558,10 +565,6 @@ boolean get_network_score_text_for_postgame(
 			string_id= flagsCapturedString;
 			break;
 			
-		case _game_of_rugby:
-			string_id= goalsString;
-			break;
-
 		case _game_of_king_of_the_hill:
 			string_id= reignString;
 			break;
@@ -703,6 +706,7 @@ boolean game_is_over(
 				}
 				break;
 				
+#if 0
 			case _game_of_capture_the_flag:
 				/* Kill limit is the number of flag pulls */
 				for(player_index= 0; player_index<dynamic_world->player_count; ++player_index)
@@ -734,6 +738,7 @@ boolean game_is_over(
 					game_over= TRUE;
 				}
 				break;
+#endif
 
 			case _game_of_defense:
 //••

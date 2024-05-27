@@ -17,7 +17,7 @@
 #include "network_sound.h"
 
 #include "screen_drawing.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "preferences.h"
 #include "fades.h"
 #include "game_window.h"
@@ -87,7 +87,7 @@ short get_level_number_from_user(
 	assert(dialog);
 
 	psprintf(temporary, "%d", maximum_level_number); 
-	ParamText(temporary, "", "", "");
+	ParamText((StringPtr)temporary, (StringPtr)"", (StringPtr)"", (StringPtr)"");
 	SelIText(dialog, iLEVEL_NUMBER, 0, SHORT_MAX);
 
 	while(!done)
@@ -234,7 +234,7 @@ void process_game_key(
 	switch(get_game_state())
 	{
 		case _game_in_progress:
-			if(event->modifiers&cmdKey && event->what==keyDown)
+			if ((event->modifiers&cmdKey) && event->what==keyDown)
 			{
 				long menu_key= MenuKey(key);
 				short menuID, menuItem;
@@ -416,7 +416,7 @@ static void network_speaker_proc(
 	short size, 
 	short player_index)
 {
-	#pragma unused(player_index);
+	#pragma unused(player_index)
 	queue_network_speaker_data((byte *) buffer, size);
 }
 
@@ -529,8 +529,22 @@ void draw_main_menu(
 	assert(pixmap);
 	locked= LockPixels(pixmap);
 	assert(locked);
+
+#if SUPPORT_DRAW_SPROCKET
+	ForeColor( blackColor );
+	PaintRect( &screen_window->portRect );
+	
+	CopyBits((BitMapPtr)*main_menu_unpressed->portPixMap, &world_pixels->portBits,
+		&source_bounds, &dest_bounds, srcCopy, (RgnHandle) NULL);
+
+	DSpContext_InvalBackBufferRect(gDrawContext, &dest_bounds );
+	DSpContext_SwapBuffers(gDrawContext, NULL, NULL);
+//	DSpContext_GetBackBuffer( gDrawContext, kDSpBufferKind_Normal, &world_pixels );
+#else
 	CopyBits((BitMapPtr)*main_menu_unpressed->portPixMap, &screen_window->portBits,
 		&source_bounds, &dest_bounds, srcCopy, (RgnHandle) NULL);
+#endif
+
 	UnlockPixels(pixmap);
 
 	SetPort(old_port);
@@ -568,8 +582,19 @@ void draw_menu_button(
 	pixmap= GetGWorldPixMap(source_world);
 	locked= LockPixels(pixmap);
 	assert(locked);
+
+#if SUPPORT_DRAW_SPROCKET
+	CopyBits((BitMapPtr)*source_world->portPixMap, &world_pixels->portBits,
+		(Rect *) screen_rect, (Rect *) screen_rect, srcCopy, (RgnHandle) NULL);
+
+	DSpContext_InvalBackBufferRect(gDrawContext,  screen_rect );
+	DSpContext_SwapBuffers(gDrawContext, NULL, NULL);
+//	DSpContext_GetBackBuffer( gDrawContext, kDSpBufferKind_Normal, &world_pixels );
+#else
 	CopyBits((BitMapPtr)*source_world->portPixMap, &screen_window->portBits,
 		(Rect *) screen_rect, (Rect *) screen_rect, srcCopy, (RgnHandle) NULL);
+#endif
+
 	UnlockPixels(pixmap);
 
 	SetPort(old_port);

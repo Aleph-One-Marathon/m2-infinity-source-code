@@ -3,6 +3,39 @@ OVERHEAD_MAP_MAC.C
 Monday, August 28, 1995 1:41:36 PM  (Jason)
 */
 
+static TextSpec overhead_map_name_font;
+
+enum
+{
+	finfMAP= 129
+};
+
+struct annotation_definition
+{
+	RGBColor color;
+	short font, face;
+	
+	short sizes[OVERHEAD_MAP_MAXIMUM_SCALE-OVERHEAD_MAP_MINIMUM_SCALE+1];
+};
+
+#define NUMBER_OF_ANNOTATION_DEFINITIONS (sizeof(annotation_definitions)/sizeof(struct annotation_definition))
+struct annotation_definition annotation_definitions[]=
+{
+	{{0, 65535, 0}, monaco, bold, {5, 9, 12, 18}},
+};
+
+void initialize_overhead_map(
+	void)
+{
+	TextSpec overhead_map_annotation_font;
+	
+	// get the overhead map name font index
+	GetNewTextSpec(&overhead_map_name_font, finfMAP, 0);
+	// get the annotation font only
+	GetNewTextSpec(&overhead_map_annotation_font, finfMAP, 1);
+	annotation_definitions[0].font= overhead_map_annotation_font.font;
+}
+
 /* ---------- private code */
 
 #define NUMBER_OF_POLYGON_COLORS (sizeof(polygon_colors)/sizeof(RGBColor))
@@ -224,20 +257,6 @@ static void draw_overhead_player(
 	return;
 }
 
-struct annotation_definition
-{
-	RGBColor color;
-	short font, face;
-	
-	short sizes[OVERHEAD_MAP_MAXIMUM_SCALE-OVERHEAD_MAP_MINIMUM_SCALE+1];
-};
-
-#define NUMBER_OF_ANNOTATION_DEFINITIONS (sizeof(annotation_definitions)/sizeof(struct annotation_definition))
-struct annotation_definition annotation_definitions[]=
-{
-	{{0, 65535, 0}, monaco, bold, {5, 9, 12, 18}},
-};
-
 static void draw_overhead_annotation(
 	world_point2d *location,
 	short color,
@@ -250,8 +269,8 @@ static void draw_overhead_annotation(
 	vassert(color>=0&&color<NUMBER_OF_ANNOTATION_DEFINITIONS, csprintf(temporary, "#%d is not a supported annotation type", color));
 	definition= annotation_definitions+color;
 	
-	strcpy(pascal_text, text);
-	c2pstr(pascal_text);
+	strcpy((char *)pascal_text, text);
+	c2pstr((char *)pascal_text);
 	MoveTo(location->x, location->y);
 	TextFont(definition->font);
 	TextFace(definition->face);
@@ -270,12 +289,12 @@ static void draw_map_name(
 {
 	Str255 pascal_name;
 	
-	strcpy(pascal_name, name);
-	c2pstr(pascal_name);
+	strcpy((char *)pascal_name, name);
+	c2pstr((char *)pascal_name);
 	
-	TextFont(monaco);
-	TextFace(normal);
-	TextSize(18);
+	TextFont(overhead_map_name_font.font);
+	TextFace(overhead_map_name_font.face);
+	TextSize(overhead_map_name_font.size);
 	RGBForeColor(&map_name_color);
 	MoveTo(data->half_width - (StringWidth(pascal_name)>>1), 25);
 	DrawString(pascal_name);

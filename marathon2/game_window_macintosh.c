@@ -15,7 +15,7 @@
 #include "interface.h"
 #include "screen.h"
 #include "portable_files.h"
-#include "sound.h" // for screen_definitions.h
+#include "game_sound.h" // for screen_definitions.h
 #include "screen_definitions.h"
 #include "images.h"
 
@@ -38,13 +38,17 @@ void draw_panels(
 	new_mode.high_resolution= TRUE;
 	change_screen_mode(&new_mode, FALSE);
 
+#if ! SUPPORT_DRAW_SPROCKET
 	myLockPixels(world_pixels);
+#endif
 
 	picture= get_picture_resource_from_images(INTERFACE_PANEL_BASE);
 	if(picture)
 	{
 		_set_port_to_gworld();
+#if ! SUPPORT_DRAW_SPROCKET
 		SetOrigin(0, 320);
+#endif
 
 		HLock((Handle) picture);
 		DrawPicture(picture, &destination);
@@ -53,13 +57,16 @@ void draw_panels(
 		update_everything(NONE);
 		ReleaseResource((Handle) picture);
 	
+#if ! SUPPORT_DRAW_SPROCKET
 		SetOrigin(0, 0);
+#endif
 		_restore_port();
 	} else {
 		/* Either they don't have the picture, or they are out of memory.  Most likely no memory */
 		alert_user(fatalError, strERRORS, outOfMemory, ResError());
 	}
 
+#if !SUPPORT_DRAW_SPROCKET
 	/* Note that you don't get here if the picture failed.. */
 	{
 		GrafPtr old_port;
@@ -81,7 +88,9 @@ void draw_panels(
 		RGBBackColor(&old_backcolor);
 		SetPort(old_port);
 	}
+
 	myUnlockPixels(world_pixels);
+#endif
 
 	change_screen_mode(&graphics_preferences->screen_mode, FALSE);
 }

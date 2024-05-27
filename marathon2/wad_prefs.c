@@ -156,7 +156,7 @@ void *w_get_data_from_preferences(
 			
 			/* We can't hand append_data_to_wad a copy of the data pointer it */
 			/* contains */
-			new_data= malloc(expected_size);
+			new_data= (char *)malloc(expected_size);
 			assert(new_data);
 			
 			memcpy(new_data, data, expected_size);

@@ -25,7 +25,7 @@
 #include "screen_drawing.h"
 #include "overhead_map.h"
 #include "time.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "interface.h" // for the error strings.
 #include "shell.h"
 #include "platforms.h" // for tagged platforms
@@ -1068,7 +1068,7 @@ dprintf("Warning: Not large enough for pict: %d (width);g", picture_id);
 static void fill_terminal_with_static(
 	Rect *bounds)
 {
-#pragma unused (bounds);
+#pragma unused (bounds)
 	dprintf("Filling with static;g");
 #ifdef OBSOLETE
 	static long seed= TickCount();

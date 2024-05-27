@@ -14,7 +14,7 @@
 #include "macintosh_cseries.h"
 #include "world.h"
 #include "map.h"
-#include ":editor code:editor.h"
+#include "editor.h"
 #include "interface.h"
 #include "shell.h"
 #include "game_wad.h"
@@ -26,6 +26,8 @@
 #include "tags.h"
 #include "wad.h"
 #include "game_wad.h"
+
+#include "screen.h"
 
 #include <string.h>
 
@@ -69,7 +71,7 @@ static boolean confirm_save_choice(FSSpec *file);
 
 /* --------- code begins */
 void get_default_map_spec(
-	FileDesc *new)
+	FileDesc *new_file)
 {
 	static boolean first_try= TRUE;
 	static FSSpec default_map_spec;
@@ -86,13 +88,13 @@ void get_default_map_spec(
 	}
 	
 	/* Copy it in. */
-	memcpy(new, &default_map_spec, sizeof(FileDesc));
+	memcpy(new_file, &default_map_spec, sizeof(FileDesc));
 	
 	return;
 }
 
 void get_default_physics_spec(
-	FileDesc *new)
+	FileDesc *new_file)
 {
 	static boolean first_try= TRUE;
 	static FSSpec default_physics_spec;
@@ -106,14 +108,14 @@ void get_default_physics_spec(
 		if(error)
 		{
 			get_my_fsspec(&default_physics_spec);
-			getpstr(default_physics_spec.name, strFILENAMES, filenamePHYSICS_MODEL);
+			getpstr((char *)default_physics_spec.name, strFILENAMES, filenamePHYSICS_MODEL);
 		}
 		
 		first_try= FALSE;
 	}
 	
 	/* Copy it in. */
-	memcpy(new, &default_physics_spec, sizeof(FileDesc));
+	memcpy(new_file, &default_physics_spec, sizeof(FileDesc));
 	
 	return;
 }
@@ -149,10 +151,14 @@ boolean save_game(
 	boolean success= FALSE;
 
 	pause_game();
+	exit_screen();
 	ShowCursor();
 	
 	/* Translate the name, and display the dialog */
-	get_current_saved_game_name(file_name);
+	get_current_saved_game_name((char *)file_name);
+	
+	// <AMR 4/9/97> added to ensure that dialog isn't named whatever the action key was
+	FlushEvents(keyDownMask|keyUpMask|autoKeyMask|mDownMask|mUpMask, 0);
 	
 	/* Create the UPP's */
 	dlgHook= NewDlgHookYDProc(custom_put_hook);
@@ -160,7 +166,7 @@ boolean save_game(
 
 	/* The drawback of this method-> I don't get a New Folder button. */
 	/* If this is terribly annoying, I will add the Sys7 only code. */
-	CustomPutFile(getpstr(prompt, strPROMPTS, _save_game_prompt), 
+	CustomPutFile((StringPtr)getpstr((char *)prompt, strPROMPTS, _save_game_prompt), 
 		file_name, &reply, 0, top_left, dlgHook, NULL, NULL, NULL, &reply.sfFile);
 
 	/* Free them... */
@@ -176,6 +182,8 @@ boolean save_game(
 	}
 
 	HideCursor();
+	enter_screen();
+	draw_interface();
 	resume_game();
 	
 	return success;
@@ -200,7 +208,7 @@ void add_finishing_touches_to_save_file(
 		err= PtrToHand(name, &resource, name[0]+1);
 		assert(!err);
 		
-		AddResource(resource, 'STR ', strSAVE_LEVEL_NAME, "");
+		AddResource(resource, 'STR ', strSAVE_LEVEL_NAME, (StringPtr)"");
 		ReleaseResource(resource);
 
 		/* Add in the overhead thumbnail. */
@@ -257,7 +265,7 @@ static void add_overhead_thumbnail(
 
 	ClosePicture();
 	
-	AddResource((Handle) picture, 'PICT', THUMBNAIL_ID, "");
+	AddResource((Handle) picture, 'PICT', THUMBNAIL_ID, (StringPtr)"");
 	ReleaseResource((Handle) picture);
 
 	SetGWorld(old_gworld, old_device);
@@ -322,7 +330,7 @@ static boolean confirm_save_choice(
 				get_window_frame(FrontWindow(), &frame);
 
 				/* Slam the ParamText */
-				ParamText(file->name, "", "", "");
+				ParamText(file->name, (StringPtr)"", (StringPtr)"", (StringPtr)"");
 
 				/* Load in the dialog.. */
 				dialog= myGetNewDialog(dlogMY_REPLACE, NULL, (WindowPtr) -1, 0);
@@ -339,7 +347,7 @@ static boolean confirm_save_choice(
 				} while(item_hit > iCANCEL);
 
 				/* Restore and cleanup.. */				
-				ParamText("", "", "", "");
+				ParamText((StringPtr)"", (StringPtr)"", (StringPtr)"", (StringPtr)"");
 				DisposeDialog(dialog);
 				
 				if(item_hit==iOK) /* replace.. */

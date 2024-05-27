@@ -17,6 +17,7 @@ Friday, September 9, 1994 12:13:04 PM (alain)
 
 #include "macintosh_cseries.h"
 #include "my32bqd.h"
+#include "textures.h"
 #include "valkyrie.h"
 
 #include <math.h>
@@ -38,13 +39,26 @@ Friday, September 9, 1994 12:13:04 PM (alain)
 
 #include <ctype.h>
 
+/*	CJD --*/
+#if SUPPORT_DRAW_SPROCKET
+#include "DrawSprocket.h"
+#endif
+
+#if 1
+#include <Displays.h>
+extern pascal OSErr DMSuspendConfigure(Handle displayState, unsigned long reserved1)
+ THREEWORDINLINE(0x303C, 0x04E9, 0xABEB);
+extern pascal OSErr DMResumeConfigure(Handle displayState, unsigned long reserved1)
+ THREEWORDINLINE(0x303C, 0x04E8, 0xABEB);
+#endif
+
 #ifdef mpwc
 #pragma segment screen
 #endif
 
 #ifdef DEBUG
 //#define CYBERMAXX
-#define WHITE_SCREEN_BETWEEN_FRAMES
+//#define WHITE_SCREEN_BETWEEN_FRAMES
 //#define DIRECT_SCREEN_TEST
 #endif
 
@@ -114,7 +128,13 @@ struct copy_screen_data
 
 /* ---------- globals */
 
-GDHandle world_device; /* the device we’re running on */
+/*	CJD -- */
+#if SUPPORT_DRAW_SPROCKET
+DSpContextAttributes	gDrawContextAttributes;
+DSpContextReference		gDrawContext;
+#endif
+
+GDHandle world_device = nil; /* the device we’re running on */
 WindowPtr screen_window; /* a window covering our entire device */
 WindowPtr backdrop_window; /* a window covering all devices */
 struct color_table *uncorrected_color_table; /* the pristine color environment of the game (can be 16bit) */
@@ -136,6 +156,8 @@ static boolean overhead_map_status= FALSE;
 //static short restore_depth, restore_flags; /* for SetDepth on exit */
 static GDSpec restore_spec, resolution_restore_spec;
 
+static VDSwitchInfoRec switchInfo;	// save the real mode that the user had
+
 #define FRAME_SAMPLE_SIZE 20
 boolean displaying_fps= FALSE;
 short frame_count, frame_index;
@@ -145,6 +167,15 @@ static boolean screen_initialized= FALSE;
 
 short bit_depth= NONE;
 short interface_bit_depth= NONE;
+
+#if 1
+Handle	display_manager_state;
+#endif
+
+#ifdef envppc
+boolean did_switch_the_resolution_on_last_enter_screen= FALSE;
+boolean did_we_ever_switched_resolution= FALSE;
+#endif
 
 /* ---------- private prototypes */
 
@@ -169,6 +200,11 @@ static void update_fps_display(GrafPtr port);
 
 static void calculate_screen_options(void);
 
+/*	CJD -- just a function to clear the attributes to a known init state	*/
+#if SUPPORT_DRAW_SPROCKET
+static void InitDrawSprocketAttributes(DSpContextAttributes *inAttributes);
+#endif
+
 /* ---------- code */
 void initialize_screen(
 	struct screen_mode_data *mode)
@@ -192,6 +228,41 @@ void initialize_screen(
 	if (mode->bit_depth==32 && !enough_memory_for_32bit) mode->bit_depth= 16;
 	if (mode->bit_depth==16 && !enough_memory_for_16bit) mode->bit_depth= 8;
 	interface_bit_depth= bit_depth= mode->bit_depth;
+	
+	/*	CJD -- Set up the DSp attributes before we ask it to request a context	*/
+#if SUPPORT_DRAW_SPROCKET
+	InitDrawSprocketAttributes(&gDrawContextAttributes);
+
+	gDrawContextAttributes.displayWidth			= 640;
+	gDrawContextAttributes.displayHeight		= 480;
+	gDrawContextAttributes.colorNeeds			= kDSpColorNeeds_Require;
+
+	switch (mode->bit_depth)
+	{
+		case 32:
+			gDrawContextAttributes.backBufferDepthMask	= kDSpDepthMask_32;
+			gDrawContextAttributes.displayDepthMask		= kDSpDepthMask_32;
+			gDrawContextAttributes.backBufferBestDepth	= 32;
+			gDrawContextAttributes.displayBestDepth		= 32;
+			break;
+
+		case 16:
+			gDrawContextAttributes.backBufferDepthMask	= kDSpDepthMask_16;
+			gDrawContextAttributes.displayDepthMask		= kDSpDepthMask_16;
+			gDrawContextAttributes.backBufferBestDepth	= 16;
+			gDrawContextAttributes.displayBestDepth		= 16;
+			break;
+			
+		default:
+			gDrawContextAttributes.backBufferDepthMask	= kDSpDepthMask_8;
+			gDrawContextAttributes.displayDepthMask		= kDSpDepthMask_8;
+			gDrawContextAttributes.backBufferBestDepth	= 8;
+			gDrawContextAttributes.displayBestDepth		= 8;
+	}
+
+	gDrawContextAttributes.pageCount			= 2;
+	
+#else
 	switch (mode->acceleration)
 	{
 		case _valkyrie_acceleration:
@@ -200,7 +271,25 @@ void initialize_screen(
 			interface_bit_depth= 8;
 			break;
 	}
+#endif
 
+	/*	CJD	--	Find a reserve a drawing context	*/
+#if SUPPORT_DRAW_SPROCKET
+	{
+	OSStatus	theError;
+	
+		theError = DSpFindBestContext(&gDrawContextAttributes, &gDrawContext);
+		if (theError != noErr)
+			alert_user(fatalError, strERRORS, badMonitor, -1);
+
+		gDrawContextAttributes.contextOptions |= kDSpContextOption_DontSyncVBL;
+
+		theError = DSpContext_Reserve(gDrawContext, &gDrawContextAttributes);
+		if (theError)
+			alert_user(fatalError, strERRORS, badMonitor, -1);
+	}
+	
+#else
 	/* beg, borrow or steal an n-bit device */
 	graphics_preferences->device_spec.bit_depth= interface_bit_depth;
 	world_device= BestDevice(&graphics_preferences->device_spec);
@@ -211,6 +300,7 @@ void initialize_screen(
 		if (world_device) mode->bit_depth= bit_depth= interface_bit_depth= 8;
 	}
 	if (!world_device) alert_user(fatalError, strERRORS, badMonitor, -1);
+#endif
 
 #ifdef OBSOLETE
 	/* beg, borrow or steal an n-bit device */
@@ -227,27 +317,18 @@ void initialize_screen(
 	{
 		graphics_preferences->device_spec.width= DESIRED_SCREEN_WIDTH;
 		graphics_preferences->device_spec.height= DESIRED_SCREEN_HEIGHT;
-#if 0
-		if (1) //(mode->texture_floor)
-		{
-			BuildGDSpec(&resolution_restore_spec, world_device);
-			SetResolutionGDSpec(&graphics_preferences->device_spec);
-		}
-		else
-		{
-			memset(&resolution_restore_spec, 0, sizeof(GDSpec));
-		}
-#endif
 		
-		/* get rid of the menu bar */
-		HideMenuBar(GetMainDevice());
-		
-		uncorrected_color_table= malloc(sizeof(struct color_table));
-		world_color_table= malloc(sizeof(struct color_table));
-		visible_color_table= malloc(sizeof(struct color_table));
-		interface_color_table= malloc(sizeof(struct color_table));
+		uncorrected_color_table= (struct color_table *)malloc(sizeof(struct color_table));
+		world_color_table= (struct color_table *)malloc(sizeof(struct color_table));
+		visible_color_table= (struct color_table *)malloc(sizeof(struct color_table));
+		interface_color_table= (struct color_table *)malloc(sizeof(struct color_table));
 		assert(uncorrected_color_table && world_color_table && visible_color_table && interface_color_table);
+		memset(world_color_table,0,sizeof(struct color_table));
+		memset(interface_color_table,0,sizeof(struct color_table));
 
+		/*	CJD --	This is where we clear the screen to black and put up the window
+					in which the game is played	*/
+#if !SUPPORT_DRAW_SPROCKET
 		backdrop_window= (WindowPtr) NewPtr(sizeof(CWindowRecord));
 		assert(backdrop_window);
 		backdrop_window= GetNewCWindow(windBACKDROP_WINDOW, (Ptr) backdrop_window, (WindowPtr) -1);
@@ -262,7 +343,33 @@ void initialize_screen(
 		assert(screen_window);
 		SetWRefCon(screen_window, refSCREEN_WINDOW);
 		ShowWindow(screen_window);
+#else
+		{
+		OSStatus	theError;
+			DisplayIDType theID;
+			
+			DSpContext_FadeGammaOut(NULL, NULL);
+			theError = DSpContext_SetState(gDrawContext, kDSpContextState_Active);
+			DSpContext_FadeGammaIn(NULL, NULL);
+			
+			if (theError)
+			{
+				DebugStr("\pCould not set context state to active");
+			}
 
+			/* CAF --	get the gdevice associated with the context */
+			theError = DSpContext_GetBackBuffer(gDrawContext, kDSpBufferKind_Normal, (CGrafPtr *) &world_pixels);
+			if( theError )
+				DebugStr("\p sh-t happened ");
+
+			theError = DSpContext_GetDisplayID( gDrawContext, &theID );
+			if( theError )
+				DebugStr("\p sh-t happened again ");
+				
+			DMGetGDeviceByDisplayID( theID, &world_device, false );
+			screen_window = (WindowPtr)world_pixels;
+		}
+#endif
 		/* allocate the bitmap_definition structure for our GWorld (it is reinitialized every frame */
 		world_pixels_structure= (struct bitmap_definition *) NewPtr(sizeof(struct bitmap_definition)+sizeof(pixel8 *)*MAXIMUM_WORLD_HEIGHT);
 		assert(world_pixels_structure);
@@ -280,7 +387,9 @@ void initialize_screen(
 		/* make sure everything gets cleaned up after we leave */
 		atexit(restore_world_device);
 	
+#if !SUPPORT_DRAW_SPROCKET
 		world_pixels= (GWorldPtr) NULL;
+#endif
 	}
 	else
 	{
@@ -291,16 +400,98 @@ void initialize_screen(
 	{
 		if (screen_initialized)
 		{
+	
+			/* get rid of the menu bar */
+			HideMenuBar(GetMainDevice());
+
 			GetPort(&old_port);
 			SetPort(screen_window);
 			PaintRect(&screen_window->portRect);
 			SetPort(old_port);
 			
 			SetDepthGDSpec(&restore_spec);
+	
+			/* get rid of the menu bar */
+			HideMenuBar(GetMainDevice());
+
 		}
 		BuildGDSpec(&restore_spec, world_device);
+#ifdef envppc
+		// did we weak link in DisplayMgr?
+		if ((DMDisposeList!=NULL)) //(mode->texture_floor)
+		{
+			BuildGDSpec(&resolution_restore_spec, world_device);
+			resolution_restore_spec.bit_depth= graphics_preferences->device_spec.bit_depth;
+			if (!screen_initialized)
+			{
+				(void) DMGetDisplayMode(world_device, &switchInfo);
+				DMBeginConfigureDisplays(&display_manager_state);
+				DMResumeConfigure(display_manager_state, 0);
+			}
+		}
+#endif
 	}
+	
+	/* CAF -- just commenting out stuff that would make us crash */
+#if !SUPPORT_DRAW_SPROCKET
 	SetDepthGDSpec(&graphics_preferences->device_spec);
+
+	/* get rid of the menu bar */
+	HideMenuBar(GetMainDevice());
+
+	MoveWindow(screen_window, (*world_device)->gdRect.left, (*world_device)->gdRect.top, FALSE);
+	SizeWindow(screen_window, RECTANGLE_WIDTH(&(*world_device)->gdRect), RECTANGLE_HEIGHT(&(*world_device)->gdRect), TRUE);
+
+#endif
+	{
+		Point origin;
+		
+		origin.h= - (RECTANGLE_WIDTH(&(*world_device)->gdRect)-DESIRED_SCREEN_WIDTH)/2;
+		origin.v= - (RECTANGLE_HEIGHT(&(*world_device)->gdRect)-DESIRED_SCREEN_HEIGHT)/2;
+		if (origin.v>0) origin.v= 0;
+		
+		GetPort(&old_port);
+		SetPort(screen_window);
+		SetOrigin(origin.h, origin.v);
+		SetPort(old_port);
+	}
+	
+	/* allocate and initialize our GWorld */
+	calculate_destination_frame(mode->size, mode->high_resolution, &bounds);
+
+#if ! SUPPORT_DRAW_SPROCKET
+	error= screen_initialized ? myUpdateGWorld(&world_pixels, 0, &bounds, (CTabHandle) NULL, (GDHandle) NULL, 0) :
+		myNewGWorld(&world_pixels, 0, &bounds, (CTabHandle) NULL, (GDHandle) NULL, 0);
+	if (error!=noErr) alert_user(fatalError, strERRORS, outOfMemory, error);
+#endif
+
+	change_screen_mode(mode, FALSE);
+
+	screen_initialized= TRUE;
+	
+	return;
+}
+
+void enter_screen(
+	void)
+{
+	GrafPtr old_port;
+	
+	if (world_view->overhead_map_active) set_overhead_map_status(FALSE);
+	if (world_view->terminal_mode_active) set_terminal_status(FALSE);
+
+#if defined(envppc) && ! SUPPORT_DRAW_SPROCKET
+	// did we weak link in DisplayMgr?
+	if ((DMDisposeList!=NULL) && graphics_preferences->do_resolution_switching) //(mode->texture_floor)
+	{
+		SetResolutionGDSpec(&graphics_preferences->device_spec, NULL);
+		did_switch_the_resolution_on_last_enter_screen= TRUE;
+		did_we_ever_switched_resolution= TRUE;
+	}
+	else
+	{
+		memset(&resolution_restore_spec, 0, sizeof(GDSpec));
+	}
 
 	MoveWindow(screen_window, (*world_device)->gdRect.left, (*world_device)->gdRect.top, FALSE);
 	SizeWindow(screen_window, RECTANGLE_WIDTH(&(*world_device)->gdRect), RECTANGLE_HEIGHT(&(*world_device)->gdRect), TRUE);
@@ -317,32 +508,21 @@ void initialize_screen(
 		SetOrigin(origin.h, origin.v);
 		SetPort(old_port);
 	}
-	
-	/* allocate and initialize our GWorld */
-	calculate_destination_frame(mode->size, mode->high_resolution, &bounds);
-	error= screen_initialized ? myUpdateGWorld(&world_pixels, 0, &bounds, (CTabHandle) NULL, (GDHandle) NULL, 0) :
-		myNewGWorld(&world_pixels, 0, &bounds, (CTabHandle) NULL, (GDHandle) NULL, 0);
-	if (error!=noErr) alert_user(fatalError, strERRORS, outOfMemory, error);
+#endif
 
-	change_screen_mode(mode, FALSE);
-
-	screen_initialized= TRUE;
-	
-	return;
-}
-
-void enter_screen(
-	void)
-{
-	GrafPtr old_port;
-	
 	GetPort(&old_port);
 	SetPort(screen_window);
+
+#if SUPPORT_DRAW_SPROCKET
+	ForeColor( blackColor );
+#endif
+
 	PaintRect(&screen_window->portRect);
 	SetPort(old_port);
 
-	if (world_view->overhead_map_active) set_overhead_map_status(FALSE);
-	if (world_view->terminal_mode_active) set_terminal_status(FALSE);
+#ifdef envppc
+	assert_world_color_table(interface_color_table, world_color_table);
+#endif
 
 	change_screen_mode(&screen_mode, TRUE);
 
@@ -359,6 +539,39 @@ void enter_screen(
 void exit_screen(
 	void)
 {
+
+#if ! SUPPORT_DRAW_SPROCKET
+#ifdef envppc
+	if (did_switch_the_resolution_on_last_enter_screen)
+	{
+		SetResolutionGDSpec(&resolution_restore_spec, NULL);
+//		DMSuspendConfigure(display_manager_state, 0);
+//		DMEndConfigureDisplays(display_manager_state);
+		did_switch_the_resolution_on_last_enter_screen= FALSE;
+	}
+	assert_world_color_table(interface_color_table, world_color_table);
+
+	MoveWindow(screen_window, (*world_device)->gdRect.left, (*world_device)->gdRect.top, FALSE);
+	SizeWindow(screen_window, RECTANGLE_WIDTH(&(*world_device)->gdRect), RECTANGLE_HEIGHT(&(*world_device)->gdRect), FALSE);
+
+	{
+		GrafPtr	old_port;
+		Point origin;
+		
+		origin.h= - (RECTANGLE_WIDTH(&(*world_device)->gdRect)-DESIRED_SCREEN_WIDTH)/2;
+		origin.v= - (RECTANGLE_HEIGHT(&(*world_device)->gdRect)-DESIRED_SCREEN_HEIGHT)/2;
+		if (origin.v>0) origin.v= 0;
+		
+		GetPort(&old_port);
+		SetPort(screen_window);
+		SetOrigin(origin.h, origin.v);
+		PaintRect(&screen_window->portRect);
+		SetPort(old_port);
+	}
+#endif
+
+#endif
+
 	switch (screen_mode.acceleration)
 	{
 		case _valkyrie_acceleration:
@@ -424,8 +637,10 @@ void change_screen_mode(
 
 	/* adjust the size of our GWorld based on mode->size and mode->resolution */
 	calculate_adjusted_source_frame(mode, &bounds);
+#if ! SUPPORT_DRAW_SPROCKET
 	error= myUpdateGWorld(&world_pixels, 0, &bounds, (CTabHandle) NULL, (GDHandle) NULL, 0);
 	if (error!=noErr) alert_user(fatalError, strERRORS, outOfMemory, error);
+#endif
 	
 	calculate_source_frame(mode->size, mode->high_resolution, &bounds);
 	width= RECTANGLE_WIDTH(&bounds), height= RECTANGLE_HEIGHT(&bounds);
@@ -444,6 +659,9 @@ void change_screen_mode(
 
 	frame_count= frame_index= 0;
 
+#ifdef envppc
+	resolution_restore_spec.bit_depth= graphics_preferences->device_spec.bit_depth;
+#endif
 	return;
 }
 
@@ -493,8 +711,12 @@ void render_screen(
 		if (world_view->terminal_mode_active) set_terminal_status(FALSE);
 	}
 
+#if ! SUPPORT_DRAW_SPROCKET
 	myLockPixels(world_pixels);
 	pixels= myGetGWorldPixMap(world_pixels);
+#else
+	pixels=world_pixels->portPixMap;
+#endif
 
 	switch (screen_mode.acceleration)
 	{
@@ -593,7 +815,9 @@ void render_screen(
 			halt();
 	}
 
+#if ! SUPPORT_DRAW_SPROCKET
 	myUnlockPixels(world_pixels);
+#endif
 
 	return;
 }
@@ -645,8 +869,10 @@ void change_screen_clut(
 		OSErr error;
 	
 		calculate_adjusted_source_frame(&screen_mode, &bounds);
+#if ! SUPPORT_DRAW_SPROCKET
 		error= myUpdateGWorld(&world_pixels, 0, &bounds, (CTabHandle) NULL, (GDHandle) NULL, 0);
 		if (error!=noErr) alert_user(fatalError, strERRORS, outOfMemory, error);
+#endif
 	}
 		
 	return;
@@ -886,7 +1112,12 @@ void animate_screen_clut(
 				// if we’re doing full-screen fall through to LowLevelSetEntries
 	
 			case _no_acceleration:
+#if SUPPORT_DRAW_SPROCKET
+				DSpContext_SetCLUTEntries( gDrawContext, (*macintosh_color_table)->ctTable, 0,
+					(*macintosh_color_table)->ctSize );
+#else
 				LowLevelSetEntries(0, (*macintosh_color_table)->ctSize, (*macintosh_color_table)->ctTable);
+#endif
 				break;
 		}
 		
@@ -901,12 +1132,16 @@ void assert_world_color_table(
 	struct color_table *interface_color_table,
 	struct color_table *world_color_table)
 {
-	if (interface_bit_depth==8)
+	if (interface_bit_depth==8 && interface_color_table->color_count)
 	{
 		CTabHandle macintosh_color_table= build_macintosh_color_table(interface_color_table);
 		
 		if (macintosh_color_table)
 		{
+#if SUPPORT_DRAW_SPROCKET
+			DSpContext_SetCLUTEntries( gDrawContext, (*macintosh_color_table)->ctTable, 0,
+				(*macintosh_color_table)->ctSize );
+#else
 			GDHandle old_device;
 			
 			HLock((Handle)macintosh_color_table);
@@ -914,12 +1149,12 @@ void assert_world_color_table(
 			SetGDevice(world_device);
 			SetEntries(0, (*macintosh_color_table)->ctSize, (*macintosh_color_table)->ctTable);
 			SetGDevice(old_device);
-			
 			DisposeHandle((Handle)macintosh_color_table);
+#endif
 		}
 	}
 	
-	if (world_color_table) animate_screen_clut(world_color_table, FALSE);
+	if (world_color_table && world_color_table->color_count) animate_screen_clut(world_color_table, FALSE);
 	
 	return;
 }
@@ -946,6 +1181,7 @@ void darken_world_window(
 void validate_world_window(
 	void)
 {
+#if ! SUPPORT_DRAW_SPROCKET
 	GrafPtr old_port;
 	Rect bounds;
 	
@@ -954,6 +1190,7 @@ void validate_world_window(
 	calculate_destination_frame(screen_mode.size, screen_mode.high_resolution, &bounds);
 	ValidRect(&bounds);
 	SetPort(old_port);
+#endif
 
 	switch (screen_mode.acceleration)
 	{
@@ -995,7 +1232,7 @@ static void update_fps_display(
 		if (frame_count<FRAME_SAMPLE_SIZE)
 		{
 			frame_count+= 1;
-			strcpy(fps, "\p--");
+			strcpy(fps, (const char *)"\p--");
 		}
 		else
 		{
@@ -1006,9 +1243,13 @@ static void update_fps_display(
 		SetPort(port);
 		TextSize(9);
 		TextFont(monaco);
+#if !SUPPORT_DRAW_SPROCKET
 		MoveTo(5, port->portRect.bottom-5);
+#else
+		MoveTo(5, 20);
+#endif
 		RGBForeColor(&rgb_white);
-		DrawString(fps);
+		DrawString((StringPtr)fps);
 		RGBForeColor(&rgb_black);
 		SetPort(old_port);
 	}
@@ -1110,22 +1351,32 @@ static void restore_world_device(
 	PaintRect(&screen_window->portRect);
 	SetPort(old_port);
 	
+#if !SUPPORT_DRAW_SPROCKET
+
 	ShowMenuBar();
 
-	/* put our device back the way we found it */
-	SetDepthGDSpec(&restore_spec);
-
-#if 0
-	if (resolution_restore_spec.width)
+#ifdef envppc
+	if (did_switch_the_resolution_on_last_enter_screen || did_we_ever_switched_resolution)
 	{
-		SetResolutionGDSpec(&resolution_restore_spec);
+		SetResolutionGDSpec(&resolution_restore_spec, &switchInfo);
+	}
+	if ((DMDisposeList!=NULL))
+	{
+		DMSuspendConfigure(display_manager_state, 0);
+		DMEndConfigureDisplays(display_manager_state);
 	}
 #endif
 
+	/* put our device back the way we found it */
+	SetDepthGDSpec(&restore_spec);
+#endif
+
+#if ! SUPPORT_DRAW_SPROCKET
 	myDisposeGWorld(world_pixels);
 	
 	CloseWindow(screen_window);
 	CloseWindow(backdrop_window);
+#endif
 	
 	return;
 }
@@ -1152,8 +1403,16 @@ static void update_screen(
 		RGBForeColor(&rgb_black);
 		RGBBackColor(&rgb_white);
 		
+		OffsetRect(&source, -source.left, -source.top);
+		
+#if SUPPORT_DRAW_SPROCKET
+		DSpContext_InvalBackBufferRect(gDrawContext, &source );
+		DSpContext_SwapBuffers(gDrawContext, NULL, NULL);
+		DSpContext_GetBackBuffer( gDrawContext, kDSpBufferKind_Normal, (CGrafPtr *)&world_pixels );
+#else
 		CopyBits((BitMapPtr)*world_pixels->portPixMap, &screen_window->portBits,
 			&source, &destination, srcCopy, (RgnHandle) NULL);
+#endif
 		
 		RGBForeColor(&old_forecolor);
 		RGBBackColor(&old_backcolor);
@@ -1167,15 +1426,24 @@ static void update_screen(
 		short source_rowBytes, destination_rowBytes, source_width, destination_width;
 		PixMapHandle screen_pixmap= (*world_device)->gdPMap;
 		
+#if ! SUPPORT_DRAW_SPROCKET
 		source_rowBytes= (*myGetGWorldPixMap(world_pixels))->rowBytes&0x3fff;
+#else
+		source_rowBytes = (*world_pixels->portPixMap)->rowBytes & 0x3FFF;
+#endif
+		
 		destination_rowBytes= (*screen_pixmap)->rowBytes&0x3fff;
 		source_width= RECTANGLE_WIDTH(&source);
 		destination_width= RECTANGLE_WIDTH(&destination);
 		
-		data.source= myGetPixBaseAddr(world_pixels);
+#if ! SUPPORT_DRAW_SPROCKET
+		data.source= (byte *)myGetPixBaseAddr(world_pixels);
+#else
+		data.source = (byte *)(*world_pixels->portPixMap)->baseAddr;
+#endif		
 		data.source_slop= source_rowBytes-source_width*pelsize;
 		
-		data.destination= (*screen_pixmap)->baseAddr + (destination.top-screen_window->portRect.top)*destination_rowBytes +
+		data.destination= (byte *)(*screen_pixmap)->baseAddr + (destination.top-screen_window->portRect.top)*destination_rowBytes +
 			(destination.left-screen_window->portRect.left)*pelsize;
 		data.destination_slop= destination_rowBytes-destination_width*pelsize;
 
@@ -1211,9 +1479,9 @@ static void update_screen(
 		}
 
 		mode= true32b;
-		SwapMMUMode(&mode);
+		SwapMMUMode((signed char *)&mode);
 		quadruple_screen(&data);
-		SwapMMUMode(&mode);
+		SwapMMUMode((signed char *)&mode);
 	}
 
 	return;
@@ -1402,5 +1670,34 @@ void quadruple_screen(
 	}
 	
 	return;
+}
+#endif
+
+//	CJD -- just a function to clear the attributes to a known init state
+#if SUPPORT_DRAW_SPROCKET
+static void
+InitDrawSprocketAttributes(DSpContextAttributes *inAttributes)
+{
+	if( NULL == inAttributes )
+		DebugStr("\pNULL context sent to InitDrawSprocketAttributes!");
+		
+	inAttributes->frequency					= 0;
+	inAttributes->displayWidth				= 0;
+	inAttributes->displayHeight				= 0;
+	inAttributes->reserved1					= 0;
+	inAttributes->reserved2					= 0;
+	inAttributes->colorNeeds				= 0;
+	inAttributes->colorTable				= NULL;
+	inAttributes->contextOptions			= 0;
+	inAttributes->backBufferDepthMask		= 0;
+	inAttributes->displayDepthMask			= 0;
+	inAttributes->backBufferBestDepth		= 0;
+	inAttributes->displayBestDepth			= 0;
+	inAttributes->pageCount					= 0;
+	inAttributes->gameMustConfirmSwitch		= false;
+	inAttributes->reserved3[0]				= 0;
+	inAttributes->reserved3[1]				= 0;
+	inAttributes->reserved3[2]				= 0;
+	inAttributes->reserved3[3]				= 0;
 }
 #endif

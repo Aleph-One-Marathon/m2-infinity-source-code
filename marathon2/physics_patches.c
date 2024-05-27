@@ -15,7 +15,7 @@
 #include "weapons.h"
 #include "wad.h"
 #include "items.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "media.h"
 #include "tags.h"
 

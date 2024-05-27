@@ -74,10 +74,14 @@ void initialize_screen_drawing(
 void _set_port_to_screen_window(
 	void)
 {
+#if SUPPORT_DRAW_SPROCKET
+	_set_port_to_gworld();
+#else
 	assert(!old_graphics_port && !old_graphics_device && !destination_graphics_port);
 	GetGWorld(&old_graphics_port, &old_graphics_device);
 	SetGWorld((GWorldPtr) screen_window, NULL);
 	destination_graphics_port= (GrafPtr) screen_window;
+#endif
 }
 
 void _set_port_to_gworld(
@@ -97,6 +101,11 @@ void _restore_port(
 	old_graphics_port= NULL;
 	old_graphics_device= NULL;
 	destination_graphics_port= NULL;
+
+#if SUPPORT_DRAW_SPROCKET
+	DSpContext_SwapBuffers(gDrawContext, NULL, NULL);
+	DSpContext_GetBackBuffer( gDrawContext, kDSpBufferKind_Normal, (CGrafPtr *)&world_pixels );
+#endif
 }
 
 /* If source==NULL, source= the shapes bounding rectangle */

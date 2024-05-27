@@ -117,11 +117,11 @@ OSErr open_network_microphone(
 			net_microphone.recording= FALSE;
 			net_microphone.network_distribution_type= network_distribution_type;
 			net_microphone.buffer= NewPtr(NETWORK_SOUND_CHUNK_BUFFER_SIZE);
-			net_microphone.completion_proc= NewSICompletionProc(sound_recording_completed);
+			net_microphone.completion_proc= (SICompletionProcPtr) NewSICompletionProc(sound_recording_completed);
 			
 			if (net_microphone.buffer && net_microphone.completion_proc)
 			{
-				err= SPBOpenDevice("", siWritePermission, &net_microphone.refnum);
+				err= SPBOpenDevice((StringPtr)"", siWritePermission, &net_microphone.refnum);
 				if(!err)
 				{
 					err= get_device_settings(net_microphone.refnum, &net_microphone.initial_settings);
@@ -134,6 +134,7 @@ OSErr open_network_microphone(
 						{
 							/* Set to our settings.. */
 							closest_supported_sample_rate(net_microphone.refnum, &game_mic_settings.sample_rate);
+						//	dprintf("asked for %x got %x", rate22khz, game_mic_settings.sample_rate);
 							err= set_device_settings(net_microphone.refnum, (struct sound_device_settings *) &game_mic_settings);
 							if(!err)
 							{
@@ -176,7 +177,7 @@ void close_network_microphone(void)
 		err= SPBCloseDevice(net_microphone.refnum);
 
 		/* Get rid of the routine descriptor */
-		DisposeRoutineDescriptor(net_microphone.completion_proc);
+		DisposeRoutineDescriptor((UniversalProcPtr) net_microphone.completion_proc);
 
 		net_microphone_installed= FALSE;
 	}
@@ -200,7 +201,9 @@ void handle_microphone(boolean triggered)
 					/* Tell us we are starting to record.. */
 					net_microphone.recording= TRUE;
 				}
-			} else {
+			}
+			else
+			{
 				/* We are recording.... restart the recording if we are done. */
 				switch(net_microphone.param_block.error)
 				{
@@ -216,7 +219,9 @@ void handle_microphone(boolean triggered)
 						break;
 				}
 			}
-		} else {
+		}
+		else
+		{
 			if(net_microphone.recording)
 			{
 				/* They just stopped.  Finish up.. */
@@ -339,9 +344,9 @@ static OSErr start_sound_recording(
 	net_microphone.param_block.milliseconds= 0;
 	net_microphone.param_block.bufferLength= NETWORK_SOUND_CHUNK_BUFFER_SIZE;
 	net_microphone.param_block.bufferPtr= net_microphone.buffer;
-	net_microphone.param_block.completionRoutine= net_microphone.completion_proc;
+	net_microphone.param_block.completionRoutine= (SICompletionUPP) net_microphone.completion_proc;
 #ifdef env68k								
-	net_microphone.param_block.userLong= (long) get_a5();;
+	net_microphone.param_block.userLong= (long) get_a5();
 #endif
 
 	return SPBRecord(&net_microphone.param_block, TRUE);
@@ -371,7 +376,7 @@ static pascal void sound_recording_completed(
 			pb->milliseconds= 0;
 			pb->bufferLength= NETWORK_SOUND_CHUNK_BUFFER_SIZE;
 			pb->bufferPtr= net_microphone.buffer;
-			pb->completionRoutine= net_microphone.completion_proc;
+			pb->completionRoutine= (SICompletionUPP) net_microphone.completion_proc;
 
 			/* Respawn the recording! */
 			pb->error= SPBRecord(pb, TRUE);
@@ -381,6 +386,7 @@ static pascal void sound_recording_completed(
 			break;
 			
 		default:
+			dprintf("SPBRecord()==#%d", pb->error);
 			break;
 	}
 	

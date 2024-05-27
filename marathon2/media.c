@@ -3,14 +3,14 @@ MEDIA.C
 Sunday, March 26, 1995 1:13:11 AM  (Jason')
 */
 
-#include <cseries.h>
+#include "cseries.h"
 
 #include "map.h"
 #include "media.h"
 #include "effects.h"
 #include "fades.h"
 #include "lightsource.h"
-#include "sound.h"
+#include "game_sound.h"
 
 #ifdef mpwc
 #pragma segment marathon

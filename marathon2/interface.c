@@ -22,7 +22,7 @@
 #include "interface.h"
 #include "player.h"
 #include "screen_drawing.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "fades.h"
 #include "game_window.h"
 #include "game_errors.h"
@@ -34,6 +34,7 @@
 #include "vbl.h"
 #include "shell.h"
 #include "preferences.h"
+#include "textures.h"
 
 /* Change this when marathon changes & replays are no longer valid */
 #define RECORDING_VERSION 0
@@ -54,18 +55,14 @@
 #ifdef DEBUG
 	#define NUMBER_OF_INTRO_SCREENS (0)
 #else
-	#ifdef DEMO
-		#define NUMBER_OF_INTRO_SCREENS (2)
-	#else
-		#define NUMBER_OF_INTRO_SCREENS (1)
-	#endif
+	#define NUMBER_OF_INTRO_SCREENS (1)
 #endif
 #define INTRO_SCREEN_DURATION (215) // fudge to align with sound
 
 #ifdef DEMO
-#define INTRO_SCREEN_TO_START_SONG_ON (1)
+	#define INTRO_SCREEN_TO_START_SONG_ON (1)
 #else
-#define INTRO_SCREEN_TO_START_SONG_ON (0)
+	#define INTRO_SCREEN_TO_START_SONG_ON (0)
 #endif
 
 #define INTRO_SCREEN_BETWEEN_DEMO_BASE (INTRO_SCREEN_BASE+1) /* +1 to get past the powercomputing */
@@ -80,16 +77,20 @@
 #define NUMBER_OF_EPILOGUE_SCREENS 1
 #define EPILOGUE_DURATION (INDEFINATE_TIME_DELAY)
 
-#define NUMBER_OF_CREDIT_SCREENS 1
+#ifndef DEMO
+	#define NUMBER_OF_CREDIT_SCREENS 2
+#else
+	#define NUMBER_OF_CREDIT_SCREENS 1
+#endif
 #define CREDIT_SCREEN_DURATION (15*60*TICKS_PER_SECOND)
 
 #define NUMBER_OF_CHAPTER_HEADINGS 0
 #define CHAPTER_HEADING_DURATION (7*MACHINE_TICKS_PER_SECOND)
 
 #if defined(DEBUG) || !defined(DEMO)
-#define NUMBER_OF_FINAL_SCREENS 0
+	#define NUMBER_OF_FINAL_SCREENS 0
 #else
-#define NUMBER_OF_FINAL_SCREENS 1
+	#define NUMBER_OF_FINAL_SCREENS 1
 #endif
 #define FINAL_SCREEN_DURATION (INDEFINATE_TIME_DELAY)
 
@@ -140,6 +141,9 @@ struct chapter_screen_sound_data chapter_screen_sounds[]=
 #endif
 
 /* -------------- local globals */
+
+boolean	no_frame_rate_limit= FALSE;
+
 static struct game_state game_state;
 static FileDesc dragged_replay_file;
 static boolean interface_fade_in_progress= FALSE;
@@ -173,16 +177,16 @@ static void handle_interface_menu_screen_click(short x, short y, boolean cheatke
 static void display_introduction(void);
 static void display_loading_map_error(void);
 static void display_quit_screens(void);
-static void	display_screen(short base_pict_id);
+//static void	display_screen(short base_pict_id); exported for preferences.c- michael evans
 static void display_introduction_screen_for_demo(void);
 static void display_epilogue(void);
 
-static void force_system_colors(void);
+//static void force_system_colors(void); exported for preferences.c - michael evans
 static boolean point_in_rectangle(short x, short y, screen_rectangle *rect);
 
 static void start_interface_fade(short type, struct color_table *original_color_table);
 static void update_interface_fades(void);
-static void interface_fade_out(short pict_resource_number, boolean fade_music);
+//static void interface_fade_out(short pict_resource_number, boolean fade_music); exported for prefs.c michael evans
 static boolean can_interface_fade_out(void);
 static void transfer_to_new_level(short level_number);
 static void try_and_display_chapter_screen(short level, boolean interface_table_is_valid, boolean text_block);
@@ -535,6 +539,10 @@ void idle_game_state(
 		{
 			render_screen(ticks_elapsed);
 		}
+		else if (no_frame_rate_limit)
+		{
+			render_screen(0);
+		}
 	} else {
 		/* Update the fade ins, etc.. */
 		update_interface_fades();
@@ -643,11 +651,17 @@ void do_menu_item_command(
 								{
 									really_wants_to_quit= TRUE;
 								} else {
+									really_wants_to_quit= TRUE;
 									pause_game();
+									exit_screen();
 									show_cursor();
-									really_wants_to_quit= quit_without_saving();
-									hide_cursor();
-									resume_game();
+									if ((really_wants_to_quit= quit_without_saving()) == FALSE)
+									{
+										hide_cursor();
+										enter_screen();
+										draw_interface();
+										resume_game();
+									}
 								}
 								break;
 							
@@ -655,6 +669,7 @@ void do_menu_item_command(
 							case _replay:
 							case _network_player:
 								really_wants_to_quit= TRUE;
+							render_screen(0); /* Get rid of hole.. */
 								break;
 								
 							default:
@@ -664,7 +679,7 @@ void do_menu_item_command(
 	
 						if(really_wants_to_quit)
 						{
-							render_screen(0); /* Get rid of hole.. */
+//							render_screen(0); /* Get rid of hole.. */
 /* If you want to quit on command-q while in the game.. */
 #if 0
 							if(menu_item==iQuitGame)
@@ -687,7 +702,16 @@ void do_menu_item_command(
 			switch(menu_item)
 			{
 				case iNewGame:
-					begin_game(_single_player, cheat);
+#ifndef TRILOGY
+					if (serial_preferences->network_only)
+					{
+						alert_user(infoError, strERRORS, networkOnlySerialNumber, 0);
+					}
+					else
+#endif
+					{
+						begin_game(_single_player, cheat);
+					}
 					break;
 		
 				case iJoinGame:
@@ -713,7 +737,16 @@ void do_menu_item_command(
 					break;
 					
 				case iLoadGame:
-					handle_load_game();
+#ifndef TRILOGY
+					if (serial_preferences->network_only)
+					{
+						alert_user(infoError, strERRORS, networkOnlySerialNumber, 0);
+					}
+					else
+#endif
+					{
+						handle_load_game();
+					}
 					break;
 		
 				case iReplayLastFilm:
@@ -1045,12 +1078,12 @@ static boolean begin_game(
 	{
 		case _network_player:
 			{
-				game_info *network_game_info= NetGetGameData();
+				game_info *network_game_info= (game_info *)NetGetGameData();
 				number_of_players= NetGetNumberOfPlayers();
 
 				for(player_index= 0; player_index<number_of_players; ++player_index)
 				{
-					player_info *player_information = NetGetPlayerData(player_index);
+					player_info *player_information = (player_info *)NetGetPlayerData(player_index);
 					starts[player_index].team = player_information->team;
 					starts[player_index].color= player_information->color;
 					starts[player_index].identifier = NetGetPlayerIdentifier(player_index);
@@ -1125,7 +1158,7 @@ static boolean begin_game(
 					starts, &game_information);
 
 				entry.level_name[0] = 0;
-//				header.game_information.game_options |= _overhead_map_is_omniscient;
+				game_information.game_options|= _overhead_map_is_omniscient;
 				record_game= FALSE;
 			}
 			break;
@@ -1172,6 +1205,10 @@ static boolean begin_game(
 		{
 			interface_fade_out(MAIN_MENU_BASE, TRUE);
 		}
+
+#ifdef envppc
+		enter_screen();	// make first chapter screen be in right resolution
+#endif
 
 		/* Try to display the first chapter screen.. */
 		if (user != _network_player && user != _demo)
@@ -1336,14 +1373,19 @@ static void finish_game(
 			remove_network_microphone();
 		}
 		NetUnSync(); // gracefully exit from the game
-
+	}
+	
+	// give them some Howard Cosell
+	if ((game_state.user==_network_player) || ((game_state.user==_replay) && (dynamic_world->player_count>1)))
+	{
 		/* Don't update the screen, etc.. */
 		game_state.state= _displaying_network_game_dialogs;
 
 		force_system_colors();
 		display_net_game_stats();
-		exit_networking();
 	}
+
+	if (game_state.user==_network_player)	exit_networking();
 	
 	if(return_to_main_menu) display_main_menu();
 }
@@ -1460,7 +1502,7 @@ static void display_loading_map_error(
 	set_game_error(systemError, errNone);
 }
 
-static void force_system_colors(
+void force_system_colors(
 	void)
 {
 	if(can_interface_fade_out())
@@ -1478,7 +1520,7 @@ static void force_system_colors(
 	}
 }
 
-static void display_screen(
+void display_screen(
 	short base_pict_id)
 {
 	short pict_resource_number= base_pict_id+game_state.current_screen;

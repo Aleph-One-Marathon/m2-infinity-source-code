@@ -51,6 +51,15 @@ BIT_DEPTH==8 and BIT_DEPTH==16
 #define LANDSCAPE_HORIZONTAL_POLYGON_LINES _landscape_horizontal_polygon_lines8
 #endif
 
+#if (BIT_DEPTH==8)
+typedef struct {
+	unsigned int b0:8;
+	unsigned int b1:8;
+	unsigned int b2:8;
+	unsigned int b3:8;
+} vectorized_long;
+#endif
+
 #if !defined(EXTERNAL) || BIT_DEPTH==32
 void TEXTURE_HORIZONTAL_POLYGON_LINES(
 	struct bitmap_definition *texture,
@@ -68,7 +77,7 @@ void TEXTURE_HORIZONTAL_POLYGON_LINES(
 	{
 		short x0= *x0_table++, x1= *x1_table++;
 		
-		register PEL *shading_table= data->shading_table;
+		register PEL *shading_table= (PEL *)data->shading_table;
 		register PEL *write= (PEL *) screen->row_addresses[y0] + x0;
 		register pixel8 *base_address= texture->row_addresses[0];
 		register unsigned long source_x= data->source_x;
@@ -77,13 +86,50 @@ void TEXTURE_HORIZONTAL_POLYGON_LINES(
 		register unsigned long source_dy= data->source_dy;
 		register short count= x1-x0;
 		
+#if (BIT_DEPTH==8)
+#define PIXEL_LOOKUP (((source_y>>(HORIZONTAL_HEIGHT_DOWNSHIFT-7))&(0x7f<<7))+(source_x>>HORIZONTAL_WIDTH_DOWNSHIFT))
+		while (((unsigned int) write)&3)
+		{
+			*write++= shading_table[base_address[PIXEL_LOOKUP]];
+			source_x+= source_dx, source_y+= source_dy;
+			count--;
+		}
+		
+		if (count>=4)
+		{
+			register short inner_count= count>>2;
+			
+			while ((inner_count-= 1)>=0)
+			{
+				register unsigned long temp;
+				
+				temp= (shading_table[base_address[PIXEL_LOOKUP]])<<24;
+				source_x+= source_dx, source_y+= source_dy;
+				temp|= (shading_table[base_address[PIXEL_LOOKUP]]&0xFF)<<16;
+				source_x+= source_dx, source_y+= source_dy;
+				temp|= (shading_table[base_address[PIXEL_LOOKUP]]&0xFF)<<8;
+				source_x+= source_dx, source_y+= source_dy;
+				temp|= (shading_table[base_address[PIXEL_LOOKUP]]&0xFF);
+				source_x+= source_dx, source_y+= source_dy;
+				*((unsigned long *) write)++= temp;
+			}
+		}
+		
+		while (count&3)
+		{
+			*write++= shading_table[base_address[PIXEL_LOOKUP]];
+			source_x+= source_dx, source_y+= source_dy;
+			count--;
+		}
+#undef PIXEL_LOOKUP
+#else
 		while ((count-= 1)>=0)
 		{
 			*write++= shading_table[base_address[((source_y>>(HORIZONTAL_HEIGHT_DOWNSHIFT-7))&(0x7f<<7))+(source_x>>HORIZONTAL_WIDTH_DOWNSHIFT)]];
 //			*write++= shading_table[source_y>>HORIZONTAL_HEIGHT_DOWNSHIFT][source_x>>HORIZONTAL_WIDTH_DOWNSHIFT]];
 			source_x+= source_dx, source_y+= source_dy;
 		}
-		
+#endif		
 		data+= 1;
 		y0+= 1;
 	}
@@ -104,7 +150,7 @@ void LANDSCAPE_HORIZONTAL_POLYGON_LINES(
 	short *x1_table,
 	short line_count)
 {
-	register short landscape_texture_width_downshift= texture->height==1024 ? 32-10 : 32-9;
+	register int landscape_texture_width_downshift= texture->height==1024 ? 32-10 : 32-9;
 
 	#pragma unused (view)
 
@@ -112,19 +158,55 @@ void LANDSCAPE_HORIZONTAL_POLYGON_LINES(
 	{
 		short x0= *x0_table++, x1= *x1_table++;
 		
-		register PEL *shading_table= data->shading_table;
+		register PEL *shading_table= (PEL *)data->shading_table;
 		register PEL *write= (PEL *) screen->row_addresses[y0] + x0;
 		register pixel8 *read= texture->row_addresses[data->source_y];
 		register unsigned long source_x= data->source_x;
 		register unsigned long source_dx= data->source_dx;
-		register short count= x1-x0;
+		register int count= x1-x0;
 		
+#if (BIT_DEPTH==8)
+#define PIXEL_LOOKUP (source_x>>landscape_texture_width_downshift)
+		while ((((unsigned int) write)&3) && ((count-= 1)>=0))
+		{
+			*write++= shading_table[read[PIXEL_LOOKUP]];
+			source_x+= source_dx;
+		}
+		
+		if (count>=4)
+		{
+			register short inner_count= count>>2;
+			
+			while ((inner_count-= 1)>=0)
+			{
+				register unsigned long temp=0;
+				
+				temp= (shading_table[read[PIXEL_LOOKUP]])<<24;
+				source_x+= source_dx;
+				temp|= (shading_table[read[PIXEL_LOOKUP]])<<16;
+				source_x+= source_dx;
+				temp|= (shading_table[read[PIXEL_LOOKUP]])<<8;
+				source_x+= source_dx;
+				temp|= (shading_table[read[PIXEL_LOOKUP]]);
+				source_x+= source_dx;
+				*((unsigned long *) write)++= temp;
+			}
+		}
+		
+		while ((count&3) && ((count-= 1)>=0))
+		{
+			*write++= shading_table[read[PIXEL_LOOKUP]];
+			source_x+= source_dx;
+		}
+#undef PIXEL_LOOKUP
+#else
 		while ((count-= 1)>=0)
 		{
 			*write++= shading_table[read[source_x>>landscape_texture_width_downshift]];
 			source_x+= source_dx;
 		}
-		
+#endif
+
 		data+= 1;
 		y0+= 1;
 	}
@@ -133,7 +215,8 @@ void LANDSCAPE_HORIZONTAL_POLYGON_LINES(
 }
 
 #if !defined(EXTERNAL) || BIT_DEPTH==32
-static void TEXTURE_VERTICAL_POLYGON_LINES(
+//#define downshift 25
+void TEXTURE_VERTICAL_POLYGON_LINES(
 	struct bitmap_definition *screen,
 	struct view_data *view,
 	struct _vertical_polygon_data *data,
@@ -160,7 +243,7 @@ static void TEXTURE_VERTICAL_POLYGON_LINES(
 			PEL *write, *shading_table;
 			pixel8 *read;
 
-			shading_table= line->shading_table;
+			shading_table= (PEL *)line->shading_table;
 			read= line->texture;
 			write= (PEL *)screen->row_addresses[y0] + x;
 
@@ -180,19 +263,19 @@ static void TEXTURE_VERTICAL_POLYGON_LINES(
 		{
 			unsigned long texture_y0= line[0].texture_y, texture_dy0= line[0].texture_dy;
 			pixel8 *read0= line[0].texture;
-			PEL *shading_table0= line[0].shading_table;
+			PEL *shading_table0= (PEL *)line[0].shading_table;
 			
 			unsigned long texture_y1= line[1].texture_y, texture_dy1= line[1].texture_dy;
 			pixel8 *read1= line[1].texture;
-			PEL *shading_table1= line[1].shading_table;
+			PEL *shading_table1= (PEL *)line[1].shading_table;
 			
 			unsigned long texture_y2= line[2].texture_y, texture_dy2= line[2].texture_dy;
 			pixel8 *read2= line[2].texture;
-			PEL *shading_table2= line[2].shading_table;
+			PEL *shading_table2= (PEL *)line[2].shading_table;
 			
 			unsigned long texture_y3= line[3].texture_y, texture_dy3= line[3].texture_dy;
 			pixel8 *read3= line[3].texture;
-			PEL *shading_table3= line[3].shading_table;
+			PEL *shading_table3= (PEL *)line[3].shading_table;
 			
 			PEL *write;
 
@@ -244,6 +327,99 @@ static void TEXTURE_VERTICAL_POLYGON_LINES(
 				}
 			}
 
+#if (BIT_DEPTH==8)
+			/* parallel map (x4) */
+			{
+				int dy0= y1_table[0] - ymax;
+				int dy1= y1_table[1] - ymax;
+				int dy2= y1_table[2] - ymax;
+				int dy3= y1_table[3] - ymax;
+				
+				count= MIN(dy0, dy1), count= MIN(count, dy2), count= MIN(count, dy3);
+				ymax+= count;
+				
+				{
+					vectorized_long	temp;
+					unsigned long	*long_write= (unsigned long *)write;
+					int old_t3= texture_y3>>downshift;
+					int old_t2= texture_y2>>downshift;
+					int old_t1= texture_y1>>downshift;
+					int old_t0= texture_y0>>downshift;
+
+					temp.b0= shading_table3[read3[old_t3]];
+					temp.b1= shading_table2[read2[old_t2]];
+					temp.b2= shading_table1[read1[old_t1]];
+					temp.b3= shading_table0[read0[old_t0]];
+					downshift= 25;
+					for (; count>0; --count)
+					{
+						if ((texture_y3>>downshift) != old_t3)
+						{
+							old_t3= texture_y3>>downshift;
+							temp.b0= shading_table3[read3[old_t3]];
+						}
+						texture_y3+= texture_dy3;
+
+						if ((texture_y2>>downshift) != old_t2)
+						{
+							old_t2= texture_y2>>downshift;
+							temp.b1= shading_table2[read2[old_t2]];
+						}
+						texture_y2+= texture_dy2;
+
+						if ((texture_y1>>downshift) != old_t1)
+						{
+							old_t1= texture_y1>>downshift;
+							temp.b2= shading_table1[read1[old_t1]];
+						}
+						texture_y1+= texture_dy1;
+
+						if ((texture_y0>>downshift) != old_t0)
+						{
+							old_t0= texture_y0>>downshift;
+							temp.b3= shading_table0[read0[old_t0]];
+						}
+						texture_y0+= texture_dy0;
+	
+						(*(vectorized_long *) write)= temp;
+						(byte *)write+= bytes_per_row;
+					}
+				}
+			}
+#elif (BIT_DEPTH==16)
+			/* parallel map (x4) */
+			{
+				int dy0= y1_table[0] - ymax;
+				int dy1= y1_table[1] - ymax;
+				int dy2= y1_table[2] - ymax;
+				int dy3= y1_table[3] - ymax;
+				unsigned long	temp;
+				unsigned long	*long_write= (unsigned long *)write;
+				
+				count= MIN(dy0, dy1), count= MIN(count, dy2), count= MIN(count, dy3);
+				ymax+= count;
+				
+				for (; count>0; --count)
+				{
+					temp= shading_table1[read1[texture_y1>>downshift]];
+					texture_y1+= texture_dy1;
+		
+					temp|= (shading_table0[read0[texture_y0>>downshift]])<<16;
+					texture_y0+= texture_dy0;
+
+					((unsigned long *) write)[0]= temp;
+
+					temp= shading_table3[read3[texture_y3>>downshift]];
+					texture_y3+= texture_dy3;
+
+					temp|= (shading_table2[read2[texture_y2>>downshift]])<<16;
+					texture_y2+= texture_dy2;
+
+					((unsigned long *) write)[1]= temp;
+					(byte *)write+= bytes_per_row;
+				}
+			}
+#else
 			/* parallel map (x4) */
 			{
 				int dy0= y1_table[0] - ymax;
@@ -271,6 +447,7 @@ static void TEXTURE_VERTICAL_POLYGON_LINES(
 					(byte *)write+= bytes_per_row;
 				}
 			}
+#endif
 
 			/* desync */	
 			{
@@ -310,10 +487,11 @@ static void TEXTURE_VERTICAL_POLYGON_LINES(
 	
 	return;
 }
+//#undef downshift
 #endif
 
 #if !defined(EXTERNAL) || BIT_DEPTH==32
-static void TRANSPARENT_TEXTURE_VERTICAL_POLYGON_LINES(
+void TRANSPARENT_TEXTURE_VERTICAL_POLYGON_LINES(
 	struct bitmap_definition *screen,
 	struct view_data *view,
 	struct _vertical_polygon_data *data,
@@ -341,7 +519,7 @@ static void TRANSPARENT_TEXTURE_VERTICAL_POLYGON_LINES(
 			PEL *write, *shading_table;
 			pixel8 *read;
 
-			shading_table= line->shading_table;
+			shading_table= (PEL *)line->shading_table;
 			read= line->texture;
 			write= (PEL *)screen->row_addresses[y0] + x;
 
@@ -362,19 +540,19 @@ static void TRANSPARENT_TEXTURE_VERTICAL_POLYGON_LINES(
 		{
 			unsigned long texture_y0= line[0].texture_y, texture_dy0= line[0].texture_dy;
 			pixel8 *read0= line[0].texture;
-			PEL *shading_table0= line[0].shading_table;
+			PEL *shading_table0= (PEL *)line[0].shading_table;
 			
 			unsigned long texture_y1= line[1].texture_y, texture_dy1= line[1].texture_dy;
 			pixel8 *read1= line[1].texture;
-			PEL *shading_table1= line[1].shading_table;
+			PEL *shading_table1= (PEL *)line[1].shading_table;
 			
 			unsigned long texture_y2= line[2].texture_y, texture_dy2= line[2].texture_dy;
 			pixel8 *read2= line[2].texture;
-			PEL *shading_table2= line[2].shading_table;
+			PEL *shading_table2= (PEL *)line[2].shading_table;
 			
 			unsigned long texture_y3= line[3].texture_y, texture_dy3= line[3].texture_dy;
 			pixel8 *read3= line[3].texture;
-			PEL *shading_table3= line[3].shading_table;
+			PEL *shading_table3= (PEL *)line[3].shading_table;
 			
 			PEL *write;
 
@@ -502,7 +680,7 @@ static void TRANSPARENT_TEXTURE_VERTICAL_POLYGON_LINES(
 }
 #endif
 
-static void TINT_VERTICAL_POLYGON_LINES(
+void TINT_VERTICAL_POLYGON_LINES(
 	struct bitmap_definition *screen,
 	struct view_data *view,
 	struct _vertical_polygon_data *data,
@@ -529,8 +707,6 @@ static void TINT_VERTICAL_POLYGON_LINES(
 	register struct tint_table32 *tint_tables= (struct tint_table32 *)line->shading_table + (tint_table_index<<3);
 #endif
 
-	#pragma unused (texture,view)
-	
 	assert(tint_table_index>=0 && tint_table_index<number_of_shading_tables);
 
 	while ((line_count-= 1)>=0)
@@ -573,7 +749,7 @@ static void TINT_VERTICAL_POLYGON_LINES(
 	return;
 }
 
-static void RANDOMIZE_VERTICAL_POLYGON_LINES(
+void RANDOMIZE_VERTICAL_POLYGON_LINES(
 	struct bitmap_definition *screen,
 	struct view_data *view,
 	struct _vertical_polygon_data *data,
@@ -588,8 +764,6 @@ static void RANDOMIZE_VERTICAL_POLYGON_LINES(
 	int x= data->x0;
 	register word seed= texture_random_seed;
 	register word drop_less_than= transfer_data;
-
-	#pragma unused (texture,view)
 
 	while ((line_count-= 1)>=0)
 	{

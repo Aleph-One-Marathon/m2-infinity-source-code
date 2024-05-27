@@ -9,7 +9,7 @@ Saturday, July 3, 1993 8:19:20 AM
 #include <string.h>
 
 #include "::world.h"
-#include "::sound.h"
+#include "::game_sound.h"
 
 #define STATIC_DEFINITIONS
 #include "::sound_definitions.h"

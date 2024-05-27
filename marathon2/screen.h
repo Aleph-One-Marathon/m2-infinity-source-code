@@ -30,6 +30,14 @@ extern struct color_table *world_color_table, *visible_color_table, *interface_c
 #ifdef mac
 extern GDHandle world_device;
 extern WindowPtr screen_window;
+extern GWorldPtr world_pixels;
+
+#if SUPPORT_DRAW_SPROCKET
+#include "DrawSprocket.h"
+extern DSpContextAttributes		gDrawContextAttributes;
+extern DSpContextReference		gDrawContext;
+#endif
+
 #endif
 
 /* ---------- prototypes/SCREEN.C */
@@ -58,6 +66,9 @@ void validate_world_window(void);
 void change_gamma_level(short gamma_level);
 
 void assert_world_color_table(struct color_table *world_color_table, struct color_table *interface_color_table);
+
+void start_teleporting_effect(boolean out);
+void start_extravision_effect(boolean out);
 
 #ifdef mac
 void initialize_screen(struct screen_mode_data *mode);

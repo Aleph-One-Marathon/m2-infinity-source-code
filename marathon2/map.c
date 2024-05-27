@@ -35,7 +35,7 @@ find_line_crossed leaving polygon could be sped up considerable by reversing the
 #include "platforms.h"
 #include "lightsource.h"
 #include "media.h"
-#include "sound.h"
+#include "game_sound.h"
 
 #include <string.h>
 
@@ -114,8 +114,6 @@ static struct map_memory_data map_structure_memory;
 /* ---------- private prototypes */
 
 static short _new_map_object(shape_descriptor shape, angle facing);
-
-short _find_line_crossed_leaving_polygon(short polygon_index, world_point2d *p0, world_point2d *p1, boolean *last_line);
 
 /* ---------- code */
 
@@ -1646,12 +1644,9 @@ boolean line_is_obstructed(
 	
 	do
 	{
-		boolean last_line;
-		
-		line_index= _find_line_crossed_leaving_polygon(polygon_index, (world_point2d *)p1, (world_point2d *)p2, &last_line);
+		line_index= find_line_crossed_leaving_polygon(polygon_index, (world_point2d *)p1, (world_point2d *)p2);
 		if (line_index!=NONE)
 		{
-			if (last_line && polygon_index==polygon_index2) break;
 			if (!LINE_IS_SOLID(get_line_data(line_index)))
 			{
 				/* transparent line, find adjacent polygon */
@@ -1662,12 +1657,6 @@ boolean line_is_obstructed(
 			{
 				obstructed= TRUE; /* non-transparent line */
 			}
-			if (last_line)
-			{
-				if (polygon_index==polygon_index2) break;
-				obstructed= TRUE;
-				break;
-			}
 		}
 		else
 		{
@@ -1675,7 +1664,26 @@ boolean line_is_obstructed(
 				destination point is in; this probably means that the source is on a different
 				level than the caller, but it could also easily mean that we’re dealing with
 				weird boundary conditions of find_line_crossed_leaving_polygon() */
-			if (polygon_index!=polygon_index2) obstructed= TRUE;
+			if (polygon_index!=polygon_index2)
+			{
+				struct polygon_data *polygon= get_polygon_data(polygon_index);
+				struct polygon_data *polygon2= get_polygon_data(polygon_index2);
+				short i, j;
+				
+				obstructed= TRUE;
+				for (i= 0; i<polygon->vertex_count; ++i)
+				{
+					for (j= 0; j<polygon2->vertex_count; ++j)
+					{
+						if (polygon->endpoint_indexes[i]==polygon2->endpoint_indexes[j])
+						{
+							// if our destination polygon shares any endpoints with our actual destination, we're ok
+							obstructed= FALSE;
+							break;
+						}
+					}
+				}
+			}
 		}
 		
 		last_polygon_index= polygon_index;
@@ -1771,6 +1779,7 @@ void random_point_on_circle(
 
 /* ---------- private code */
 
+#if 0
 /* returns the line_index of the line we intersected to leave this polygon, or NONE if destination
 	is in the given polygon */
 short _find_line_crossed_leaving_polygon(
@@ -1810,6 +1819,7 @@ short _find_line_crossed_leaving_polygon(
 	
 	return intersected_line_index;
 }
+#endif
 
 static short _new_map_object(
 	shape_descriptor shape,
@@ -2032,7 +2042,7 @@ void _sound_add_ambient_sources_proc(
 		if (media && listener->point.z<media->height)
 		{
 			// if we’re under media don’t play the ambient sound image
-			add_one_ambient_sound_source(data, (world_location3d *) NULL, listener,
+			add_one_ambient_sound_source((struct ambient_sound_data *)data, (world_location3d *) NULL, listener,
 				get_media_sound(listener_polygon->media_index, _media_snd_ambient_under), MAXIMUM_SOUND_VOLUME);
 			under_media= TRUE;
 		}
@@ -2043,14 +2053,14 @@ void _sound_add_ambient_sources_proc(
 			{
 				struct ambient_sound_image_data *image= get_ambient_sound_image_data(listener_polygon->ambient_sound_image_index);
 				
-				add_one_ambient_sound_source(data, (world_location3d *) NULL, listener, image->sound_index, image->volume);
+				add_one_ambient_sound_source((struct ambient_sound_data *)data, (world_location3d *) NULL, listener, image->sound_index, image->volume);
 			}
 
 			// if we’re over media, play that ambient sound image
 			if (media && (media->height>=listener_polygon->floor_height || !MEDIA_SOUND_OBSTRUCTED_BY_FLOOR(media)))
 			{
 				source= *listener, source.point.z= media->height;
-				add_one_ambient_sound_source(data, &source, listener,
+				add_one_ambient_sound_source((struct ambient_sound_data *)data, &source, listener,
 					get_media_sound(listener_polygon->media_index, _media_snd_ambient_over), MAXIMUM_SOUND_VOLUME);
 			}
 		}
@@ -2063,7 +2073,7 @@ void _sound_add_ambient_sources_proc(
 			if (PLATFORM_IS_ACTIVE(platform) && PLATFORM_IS_MOVING(platform))
 			{
 				source= *listener, source.point.z= listener_polygon->floor_height;
-				add_one_ambient_sound_source(data, &source, listener,
+				add_one_ambient_sound_source((struct ambient_sound_data *)data, &source, listener,
 					get_platform_moving_sound(listener_polygon->permutation), MAXIMUM_SOUND_VOLUME);
 			}
 		}
@@ -2119,7 +2129,7 @@ void _sound_add_ambient_sources_proc(
 			// .index is environmental sound type, .facing is volume
 			if (active && (!under_media || (source.point.z<media->height && polygon->media_index==listener_polygon->media_index)))
 			{
-				add_one_ambient_sound_source(data, &source, listener, sound_type, sound_volume);
+				add_one_ambient_sound_source((struct ambient_sound_data *)data, &source, listener, sound_type, sound_volume);
 			}
 		}
 	}

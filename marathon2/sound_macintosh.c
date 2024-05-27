@@ -6,8 +6,131 @@ Tuesday, August 29, 1995 8:56:06 AM  (Jason)
 	running.
 Thursday, August 31, 1995 9:09:46 AM  (Jason)
 	pitch changes without bogus sound headers.
+Saturday , January 27, 1996 9:26 AM  (Jason)
+	use rateMultiplierCmd instead of rateCmd to adjust channel pitch before bufferCmd.
 */
 
+
+#ifdef SUPPORT_SOUND_SPROCKET
+#include "fp.h"
+
+static SSpListenerReference 	gListener = NULL;
+static float					gSprocketSinTable[NUMBER_OF_ANGLES];
+static float					gSprocketCosTable[NUMBER_OF_ANGLES];
+
+void InitializeTables(void);
+SSpSourceReference 		CreateSource (void);
+SSpListenerReference 	CreateListener(void);
+
+void ConvertMarathonCoordinatesToSoundSprocket (world_location3d *theWorld, 
+												TQ3CameraPlacement *outCamera);
+												
+void CalcSourceInfo(SSpSourceReference theSource, world_location3d 	*theWorld);
+void CalcListenerInfo (world_location3d *marathonCoords);
+
+void InitializeTables(void)
+{
+	int loop;
+	long double angle = 0;
+	
+	for (loop = 0; loop < NUMBER_OF_ANGLES; loop++)
+	{
+		
+		long double angle = 360*loop/(57.296*NUMBER_OF_ANGLES);
+		
+		gSprocketSinTable[loop] = sin (angle);
+		gSprocketCosTable[loop] = cos (angle);
+	}
+	
+}
+
+SSpSourceReference CreateSource ()
+{
+	OSStatus 				theErr = noErr;
+	SSpSourceReference 		theSource = NULL;
+	
+	theErr = SSpSource_New (&theSource);
+	
+	if (theErr != noErr)
+	{
+		DebugStr ("\pFailed to create a source");
+		theSource = NULL;
+	}
+	
+	return theSource;
+}
+
+
+SSpListenerReference CreateListener()
+{
+	OSStatus 				theErr = noErr;
+	SSpListenerReference 	theSource = NULL;
+	
+	theErr = SSpListener_New (&theSource);
+	
+	if (theErr != noErr)
+	{
+		DebugStr ("\pFailed to create a listener");
+		theSource = NULL;
+	}
+	
+	return theSource;
+}
+
+void ConvertMarathonCoordinatesToSoundSprocket (world_location3d *theWorld, 
+												TQ3CameraPlacement *outCamera)
+{
+	// up vector and orientation are arbitrary, will fix later.
+	angle pitch = normalize_angle (theWorld->pitch);
+	angle yaw = normalize_angle (theWorld->yaw);
+	
+	outCamera->cameraLocation.x = (float) theWorld->point.x;
+	outCamera->cameraLocation.y = (float) theWorld->point.y;
+	outCamera->cameraLocation.z = (float) theWorld->point.z;
+
+	outCamera->upVector.x = gSprocketSinTable[pitch];
+	outCamera->upVector.y = 0;
+	outCamera->upVector.z = gSprocketCosTable[pitch];
+	
+	outCamera->pointOfInterest.x = (float) theWorld->point.x + (gSprocketCosTable[yaw]*gSprocketCosTable[pitch]);
+	outCamera->pointOfInterest.y = (float) theWorld->point.y - gSprocketSinTable[yaw];
+	outCamera->pointOfInterest.z = (float) theWorld->point.z + (gSprocketCosTable[yaw]*gSprocketSinTable[pitch]);
+}
+
+// Only needs to be called once per frame
+void CalcListenerInfo (world_location3d *marathonCoords)
+{
+	TQ3CameraPlacement 	listenerPosition;
+	OSStatus 			theErr = noErr;
+
+	// need to get the world coordinate -- how?
+
+	ConvertMarathonCoordinatesToSoundSprocket (marathonCoords, &listenerPosition);
+	
+	theErr = SSpListener_SetCameraPlacement (gListener, &listenerPosition);
+	
+	if (theErr != noErr)
+		DebugStr ("\pFailed to set the camera position of the listener");
+}
+
+
+// Needs to be called once per sound source that is being dynamically changed
+void CalcSourceInfo(SSpSourceReference theSource, world_location3d 	*theWorld)
+{
+	TQ3CameraPlacement 	sourcePosition;
+	OSStatus 			theErr = noErr;
+
+	// need to get the world coordinate -- how?
+
+	ConvertMarathonCoordinatesToSoundSprocket (theWorld, &sourcePosition);
+	
+	theErr = SSpSource_SetCameraPlacement (theSource, &sourcePosition);
+	
+	if (theErr != noErr)
+		DebugStr ("\pFailed to set the camera position of the source");
+}
+
+#endif
 /* --------- constants */
 
 enum
@@ -75,6 +198,9 @@ void set_sound_manager_status(
 		short i;
 		OSErr error;
 		struct channel_data *channel;
+#ifdef SUPPORT_SOUND_SPROCKET
+		SoundComponentLink		myLink;
+#endif
 	
 		if (active != _sm_active)
 		{
@@ -94,6 +220,12 @@ void set_sound_manager_status(
 
 				GetDefaultOutputVolume(&_sm_globals->old_sound_volume);
 				SetDefaultOutputVolume(sound_level_to_sound_volume(_sm_parameters->volume));
+				
+#ifdef SUPPORT_SOUND_SPROCKET
+				InitializeTables();
+				gListener = CreateListener();
+				SSpListener_SetMetersPerUnit (gListener, 0.0001);
+#endif
 				
 				for (i= 0, channel= _sm_globals->channels; i<_sm_globals->total_channel_count; ++i, ++channel)
 				{
@@ -121,6 +253,25 @@ void set_sound_manager_status(
 						
 						break;
 					}
+					
+#ifdef SUPPORT_SOUND_SPROCKET
+					channel->sspSource = CreateSource();
+
+					myLink.description.componentType = kSoundEffectsType;
+					myLink.description.componentSubType = kSSpLocalizationSubType;
+					myLink.description.componentManufacturer = 0;
+					myLink.description.componentFlags = 0;
+					myLink.description.componentFlagsMask = 0;
+					myLink.mixerID = nil;
+					myLink.linkID = nil;
+					
+					error = SndSetInfo(channel->channel, siPreMixerSoundComponent, &myLink);
+					if (error != noErr)
+					{
+						DebugStr("\pError in SOUND_SPROCKET - set_sound_manager_status");
+					}
+#endif		
+					
 				}
 			}
 			else
@@ -130,7 +281,14 @@ void set_sound_manager_status(
 				{
 					error= SndDisposeChannel(channel->channel, TRUE);
 					assert(error==noErr);
+#ifdef SUPPORT_SOUND_SPROCKET
+				SSpSource_Dispose (channel->sspSource);
+#endif
 				}
+
+#ifdef SUPPORT_SOUND_SPROCKET
+				SSpListener_Dispose (gListener);
+#endif
 
 				SetDefaultOutputVolume(_sm_globals->old_sound_volume);
 				
@@ -157,50 +315,51 @@ OSErr open_sound_file(
 	FSSpec *spec)
 {
 	OSErr error= noErr;
-
-	if (_sm_initialized)
-	{
-		short refNum;
-		
-		error= FSpOpenDF(spec, fsRdPerm, &refNum);
-		if (error==noErr)
-		{
-			long count;
+	short refNum;
 	
-			// read header		
-			{
-				struct sound_file_header header;
-				
-				count= sizeof(struct sound_file_header);
-				error= FSRead(refNum, &count, (void *) &header);
-				if (error==noErr)
-				{
-					if (header.version!=SOUND_FILE_VERSION ||
-						header.tag!=SOUND_FILE_TAG ||
-						header.sound_count!=NUMBER_OF_SOUND_DEFINITIONS ||
-						header.source_count!=NUMBER_OF_SOUND_SOURCES)
-					{
-						dprintf("sound file discarded %p 0x%x '%4s' #%d/#%d;g;", &header, header.version, &header.tag, header.sound_count, NUMBER_OF_SOUND_DEFINITIONS);
-						error= -1;
-					}
-				}
-			}
+	error= FSpOpenDF(spec, fsRdPerm, &refNum);
+	if (error==noErr)
+	{
+		long count;
+
+		// read header		
+		{
+			struct sound_file_header header;
 			
+			count= sizeof(struct sound_file_header);
+			error= FSRead(refNum, &count, (void *) &header);
 			if (error==noErr)
 			{
-				count= NUMBER_OF_SOUND_SOURCES*NUMBER_OF_SOUND_DEFINITIONS*sizeof(struct sound_definition);
-				error= FSRead(refNum, &count, (void *) sound_definitions);
-				if (error==noErr)
+				if (header.version!=SOUND_FILE_VERSION ||
+					header.tag!=SOUND_FILE_TAG ||
+					header.sound_count!=NUMBER_OF_SOUND_DEFINITIONS ||
+					header.source_count!=NUMBER_OF_SOUND_SOURCES)
 				{
+					dprintf("sound file discarded %p 0x%x '%4.4s' #%d/#%d;g;", &header, header.version, &header.tag, header.sound_count, NUMBER_OF_SOUND_DEFINITIONS);
+					error= -1;
 				}
 			}
-			
-			if (error!=noErr)
+		}
+		
+		if (error==noErr)
+		{
+			count= NUMBER_OF_SOUND_SOURCES*NUMBER_OF_SOUND_DEFINITIONS*sizeof(struct sound_definition);
+			error= FSRead(refNum, &count, (void *) sound_definitions);
+			if (error==noErr)
 			{
-				FSClose(refNum);
-				refNum= -1;
 			}
-	
+			else
+			{
+				_sm_initialized= FALSE;
+			}
+		}
+		
+		if (error!=noErr)
+		{
+			FSClose(refNum);
+		}
+		else
+		{
 			close_sound_file();
 			_sm_globals->sound_file_refnum= refNum;
 		}
@@ -343,11 +502,11 @@ static void unlock_sound(
 {
 	struct sound_definition *definition= get_sound_definition(sound_index);
 	
-	assert(definition->handle);
+	assert(definition->hndl);
 	
-	if (definition->handle)
+	if (definition->hndl)
 	{
-		HUnlock((Handle)definition->handle);
+		HUnlock((Handle)definition->hndl);
 	}
 	
 	return;
@@ -358,11 +517,11 @@ static void dispose_sound(
 {
 	struct sound_definition *definition= get_sound_definition(sound_index);
 	
-	assert(definition->handle);
+	assert(definition->hndl);
 	
-	_sm_globals->loaded_sounds_size-= GetHandleSize((Handle)definition->handle);
-	DisposeHandle((Handle)definition->handle);
-	definition->handle= 0;
+	_sm_globals->loaded_sounds_size-= GetHandleSize((Handle)definition->hndl);
+	DisposeHandle((Handle)definition->hndl);
+	definition->hndl= 0;
 	
 	return;
 }
@@ -447,6 +606,73 @@ static void quiet_channel(
 	return;
 }
 
+//••••••••••
+#ifdef SUPPORT_SOUND_SPROCKET
+
+static void instantiate_sound_variables(
+	struct sound_variables *variables,
+	struct channel_data *channel,
+	boolean first_time)
+{
+
+	OSStatus 			error= noErr;
+	SndCommand 			command;
+	SSpLocalizationData stereoData;
+
+
+
+	if (variables->useSprocketForSound)
+	{
+			// set the source location
+	error = SSpSource_SetCameraPlacement (channel->sspSource, &variables->source);
+	if (error != noErr) DebugStr ("\pFailed to set the source location");
+	
+	error = SSpSource_SetReferenceDistance (channel->sspSource, 2000.0);
+	
+		
+	// calculate our channel parameters and pass them along to the channel
+	error = SSpSource_CalcLocalization (channel->sspSource, gListener, &stereoData);
+	if (error != noErr) DebugStr ("\pFailed to calculate the localization");
+	
+	if (first_time)
+		stereoData.currentLocation.sourceVelocity = 0;
+	
+	stereoData.sourceMode = kSSpSourceMode_Localized;
+	
+	command.param1= 0;
+	command.param2= BUILD_STEREO_VOLUME(variables->volume, variables->volume);
+	error= SndDoImmediate(channel->channel, &command);
+	
+	SndSetInfo (channel->channel, siSSpLocalization, &stereoData);
+
+	channel->variables= *variables;
+	}
+	else
+	{
+		SndCommand command;
+		SSpLocalizationData bogusLocalization;
+
+	if (first_time || variables->right_volume!=channel->variables.right_volume || variables->left_volume!=channel->variables.left_volume)
+	{
+		/* set the sound volume */
+		command.cmd= volumeCmd;
+		command.param1= 0;
+		command.param2= BUILD_STEREO_VOLUME(variables->left_volume, variables->right_volume);
+		error= SndDoImmediate(channel->channel, &command);
+	}
+
+	vwarn(error==noErr, csprintf(temporary, "SndDoImmediate() == #%d in instantiate_sound_variables()", error));
+
+	channel->variables= *variables;
+	
+		bogusLocalization.sourceMode = kSSpSourceMode_Unfiltered;
+		SndSetInfo (channel->channel, siSSpLocalization, &bogusLocalization);
+		return;
+	}
+
+}
+
+#else
 static void instantiate_sound_variables(
 	struct sound_variables *variables,
 	struct channel_data *channel,
@@ -470,6 +696,7 @@ static void instantiate_sound_variables(
 	
 	return;
 }
+#endif
 
 static void buffer_sound(
 	struct channel_data *channel,
@@ -482,46 +709,37 @@ static void buffer_sound(
 	SndCommand command;
 	OSErr error;
 
-	assert(definition->handle);
-	HLock((Handle)definition->handle);
+	assert(definition->hndl);
+	HLock((Handle)definition->hndl);
 	
 	assert(permutation>=0 && permutation<definition->permutations);
-	sound_header= (SoundHeaderPtr) ((*(byte **)definition->handle) + definition->sound_offsets[permutation]);
+	sound_header= (SoundHeaderPtr) ((*(byte **)definition->hndl) + definition->sound_offsets[permutation]);
 
-	/* play the sound */
-	command.cmd= bufferCmd; /* high bit not set: we’re sending a real pointer */
+	command.cmd= rateMultiplierCmd;
 	command.param1= 0;
-	command.param2= (long) sound_header;
-	error= SndDoCommand(channel->channel, &command, FALSE);
+	command.param2= (long) calculate_pitch_modifier(sound_index, pitch);
+	error= SndDoImmediate(channel->channel, &command);
 	if (error==noErr)
 	{
-		/* queue the callback */
-		command.cmd= callBackCmd;
+		/* play the sound */
+		command.cmd= bufferCmd; /* high bit not set: we’re sending a real pointer */
 		command.param1= 0;
-		command.param2= 0;
+		command.param2= (long) sound_header;
 		error= SndDoCommand(channel->channel, &command, FALSE);
 		if (error==noErr)
 		{
-			if (pitch!=FIXED_ONE)
+			/* queue the callback */
+			command.cmd= callBackCmd;
+			command.param1= 0;
+			command.param2= 0;
+			error= SndDoCommand(channel->channel, &command, FALSE);
+			if (error==noErr)
 			{
-				fixed rate;
-				
-				command.cmd= getRateCmd;
-				command.param1= 0;
-				command.param2= &rate;
-				error= SndDoImmediate(channel->channel, &command);
-				if (error==noErr)
-				{
-					command.cmd= rateCmd;
-					command.param1= 0;
-					command.param2= FixMul(rate, calculate_pitch_modifier(sound_index, pitch));
-					error= SndDoImmediate(channel->channel, &command);
-				}
 			}
 		}
 	}
 
-	vassert(error==noErr, csprintf(temporary, "SndDoCommand() == #%d in buffer_sound()", error));
+	vwarn(error==noErr, csprintf(temporary, "SndDoCommand() == #%d in buffer_sound()", error));
 	
 	return;
 }
@@ -624,6 +842,9 @@ static synchronous_global_fade_to_silence(
 					new->left_volume= (old->left_volume*(FADE_OUT_STEPS-step-1))/FADE_OUT_STEPS;
 					new->right_volume= (old->right_volume*(FADE_OUT_STEPS-step-1))/FADE_OUT_STEPS;
 			
+#ifdef SUPPORT_SOUND_SPROCKET
+					variables->useSprocketForSound = false;
+#endif
 					instantiate_sound_variables(&channel->variables, channel, TRUE);
 				}
 			}

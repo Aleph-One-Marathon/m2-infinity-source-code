@@ -13,13 +13,13 @@
 #define MAXIMUM_LEVEL_NAME_SIZE 64
 
 /* OSTypes.. */
-#define APPLICATION_CREATOR '52.4'
+#define APPLICATION_CREATOR '26.∞'
 #define SCENARIO_FILE_TYPE 'sce2'
-#define SAVE_GAME_TYPE 'sga2'
-#define FILM_FILE_TYPE 'fil2'
-#define PHYSICS_FILE_TYPE 'phy2'
-#define SHAPES_FILE_TYPE 'shp2'
-#define SOUNDS_FILE_TYPE 'snd2'
+#define SAVE_GAME_TYPE 'sga∞'
+#define FILM_FILE_TYPE 'fil∞'
+#define PHYSICS_FILE_TYPE 'phy∞'
+#define SHAPES_FILE_TYPE 'shp∞'
+#define SOUNDS_FILE_TYPE 'snd∞'
 #define PATCH_FILE_TYPE 'pat2'
 
 /* Other tags-  */

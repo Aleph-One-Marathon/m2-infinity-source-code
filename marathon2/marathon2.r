@@ -13,25 +13,38 @@ Monday, March 28, 1994 3:08:23 PM
 #include "SysTypes.r"
 #include "CodeFragmentTypes.r"
 
-#define CREATOR '52.4'
-#define VERSION "1.0"
+#define CREATOR '26.∞'
+#define VERSION "1.5"
 #define MAJOR_VERSION 1
-#define MINOR_VERSION 0
-#define RELEASE_STAGE development
+#define MINOR_VERSION 5
+#define RELEASE_STAGE release
 #define PRE_RELEASE_REVISION 0
 
 #ifdef DEMO
 	#define SHORT_VERSION_STRING "v" VERSION
-	#define LONG_VERSION_STRING "v" VERSION " DEMO © 1995 Bungie Software Products Corp."
+	#define LONG_VERSION_STRING "v" VERSION " DEMO © 1995-1997 Bungie Software Products Corp."
 #else
 	#define SHORT_VERSION_STRING "v" VERSION
-	#define LONG_VERSION_STRING "v" VERSION " © 1995 Bungie Software Products Corp."
+	#define LONG_VERSION_STRING "v" VERSION " © 1995-1997 Bungie Software Products Corp."
 #endif
 
+#ifdef __MWERKS__
+include CODE_FILE 'CODE';
+include CODE_FILE 'DATA'; // yay metrowerks
+#else
 #ifndef fat
 
-include ":binaries:marathon2.resource";
+/* zug zug */
+#ifdef SUPPORT_INPUT_SPROCKET
+include ":binaries:infinityInput.rsrc" not 'ckid' ;
+#endif
+
+include ":binaries:marathon2.resource" not 'ckid' ;
+#ifdef DEMO
+include ":demos.demo:demos.resource";
+#else
 include ":demos:demos.resource";
+#endif
 /* include ":texts:texts.resource"; */
 /* include ":graphics:screens"; */
 
@@ -39,7 +52,7 @@ include ":demos:demos.resource";
 include ":binaries:demo.resource"; /* overrides resources in marathon.resource */
 include ":graphics:demo.screens";
 #else
-include ":binaries:game.resource";
+include ":binaries:game.resource" not 'ckid';
 include ":graphics:game.screens";
 #endif
 #endif /* fat */
@@ -47,6 +60,7 @@ include ":graphics:game.screens";
 #ifdef envppc
 	#ifdef fat
 		include CODE_FILE 'CODE';
+		include CODE_FILE 'SOCK';
 		#ifndef DEMO
 			/* include whatever resource we need to get the 68k checksum from */
 		#endif
@@ -69,6 +83,7 @@ include ":graphics:game.screens";
 			"Marathon 2"
 		}
 	};
+#endif
 #endif
 
 #ifdef DEBUG

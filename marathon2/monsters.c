@@ -27,7 +27,7 @@ Monday, July 10, 1995 11:49:06 AM  (Jason)
 #include "player.h"
 #include "platforms.h"
 #include "scenery.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "fades.h"
 #include "items.h"
 #include "media.h"
@@ -116,7 +116,7 @@ struct monster_pathfinding_data
 /* ---------- private prototypes */
 
 #ifdef DEBUG
-struct monster_definition *get_monster_definition(short type);
+static struct monster_definition *get_monster_definition(short type);
 #else
 #define get_monster_definition(i) (monster_definitions+(i))
 #endif
@@ -137,7 +137,7 @@ static boolean translate_monster(short monster_index, world_distance distance);
 static boolean try_monster_attack(short monster_index);
 			
 static long monster_pathfinding_cost_function(short source_polygon_index, short line_index,
-	short destination_polygon_index, struct monster_pathfinding_data *data);
+	short destination_polygon_index, void *data);
 
 static void set_monster_action(short monster_index, short action);
 static void set_monster_mode(short monster_index, short new_mode, short target_index);
@@ -151,7 +151,7 @@ static void update_monster_vertical_physics_model(short monster_index);
 static void update_monster_physics_model(short monster_index);
 
 static long monster_activation_flood_proc(short source_polygon_index, short line_index,
-	short destination_polygon_index, long *flags);
+	short destination_polygon_index, void *flags);
 
 static boolean attempt_evasive_manouvers(short monster_index);
 
@@ -271,7 +271,7 @@ short new_monster(
 	}
 
 	/* keep track of how many civilians we drop on this level */
-//	if (monster_index!=NONE && (definition->class&_class_human_civilian)) dynamic_world->current_civilian_count+= 1;
+//	if (monster_index!=NONE && (definition->monster_class&_class_human_civilian)) dynamic_world->current_civilian_count+= 1;
 
 	return monster_index;
 }
@@ -639,7 +639,7 @@ void activate_nearby_monsters(
 		
 		/* flood out from the target monster’s polygon, searching through the object lists of all
 			polygons we encounter */
-		polygon_index= flood_map(polygon_index, LONG_MAX, monster_activation_flood_proc, _flagged_breadth_first, &flood_flags);
+		polygon_index= flood_map(polygon_index, LONG_MAX, monster_activation_flood_proc, _flagged_breadth_first, (void *)&flood_flags);
 		while (polygon_index!=NONE)
 		{
 			short object_index;
@@ -715,7 +715,7 @@ void activate_nearby_monsters(
 				}
 			}
 			
-			polygon_index= flood_map(NONE, LONG_MAX, monster_activation_flood_proc, _flagged_breadth_first, &flood_flags);
+			polygon_index= flood_map(NONE, LONG_MAX, monster_activation_flood_proc, _flagged_breadth_first, (void *)&flood_flags);
 		}
 
 		// deferred find_closest_appropriate_target() calls
@@ -1204,10 +1204,25 @@ void damage_monsters_in_radius(
 	short object_count;
 	short object_indexes[LOCAL_INTERSECTING_MONSTER_BUFFER_SIZE];
 
+	boolean aggressor_is_live_player= FALSE;
+
 	#pragma unused (primary_target_index)
 	
 	object_count= 0;
 	possible_intersecting_monsters(object_indexes, &object_count, LOCAL_INTERSECTING_MONSTER_BUFFER_SIZE, epicenter_polygon_index, FALSE);
+
+	if (aggressor_index!=NONE)
+	{
+		struct monster_data *monster= get_monster_data(aggressor_index);
+		
+		if (MONSTER_IS_PLAYER(monster))
+		{
+			struct player_data *player= get_player_data(monster_index_to_player_index(aggressor_index));
+			
+			if (!PLAYER_IS_DEAD(player)) aggressor_is_live_player= TRUE;
+		}
+	}
+	
 	for (i=0;i<object_count;++i)
 	{
 		struct object_data *object= get_object_data(object_indexes[i]);
@@ -1226,6 +1241,34 @@ void damage_monsters_in_radius(
 				{
 					damage_monster(object->permutation, aggressor_index, aggressor_type, epicenter, damage);
 				}
+			}
+		}
+	}
+
+	if (aggressor_is_live_player && GET_GAME_TYPE()==_game_of_tag)
+	{
+		struct monster_data *monster= get_monster_data(aggressor_index);
+		
+		if (MONSTER_IS_PLAYER(monster))
+		{
+			short player_index= monster_index_to_player_index(aggressor_index);
+			struct player_data *player= get_player_data(player_index);
+			
+			// he blew himself up, so make sure he's it
+			if (PLAYER_IS_DEAD(player))
+			{
+#if 0
+				if ((player_index==local_player_index) && (player_index!=dynamic_world->game_player_index))
+				{
+					play_local_sound(_snd_you_are_it);
+				}
+#else
+				if (player_index!=dynamic_world->game_player_index)
+				{
+					play_object_sound(player->object_index, _snd_you_are_it);
+				}
+#endif
+				dynamic_world->game_player_index= player_index;
 			}
 		}
 	}
@@ -1320,7 +1363,7 @@ void damage_monster(
 					{
 						aggressor_player->monster_damage_given.kills+= 1;
 						
-						if (definition->class&_class_human_civilian) dynamic_world->civilians_killed_by_players+= 1;
+						if (definition->monster_class&_class_human_civilian) dynamic_world->civilians_killed_by_players+= 1;
 					}
 				}
 			}
@@ -1838,7 +1881,7 @@ static void generate_new_path_for_monster(
 			/* if we can’t attack, run away, otherwise go for the target */
 			if (definition->flags&_monster_cannot_attack)
 			{
-				dprintf("%p", monster);
+//				dprintf("%p", monster);
 				destination= (world_point2d *) &bias;
 				bias.i= object->location.x - target_object->location.x;
 				bias.j= object->location.y - target_object->location.y;
@@ -1883,7 +1926,7 @@ static void generate_new_path_for_monster(
 	data.cross_zone_boundaries= destination_polygon_index==NONE ? FALSE : TRUE;
 
 	monster->path= new_path((world_point2d *)&object->location, object->polygon, destination,
-		destination_polygon_index, 3*definition->radius, monster_pathfinding_cost_function, &data);
+		destination_polygon_index, 3*definition->radius, monster_pathfinding_cost_function, (void *)&data);
 	if (monster->path==NONE)
 	{
 		if (monster->action!=_monster_is_being_hit || MONSTER_IS_DYING(monster)) set_monster_action(monster_index, _monster_is_stationary);
@@ -1994,7 +2037,7 @@ static short get_monster_attitude(
 	/* berserk monsters are hostile toward everything */
 	if (TYPE_IS_ENEMY(definition, target_type) || MONSTER_IS_BERSERK(monster) ||
 		(MONSTER_HAS_VALID_TARGET(monster) && monster->target_index==target_index) ||
-		((definition->class&_class_human_civilian) && MONSTER_IS_PLAYER(target) && dynamic_world->civilians_killed_by_players>=CIVILIANS_KILLED_BY_PLAYER_THRESHHOLD))
+		((definition->monster_class&_class_human_civilian) && MONSTER_IS_PLAYER(target) && dynamic_world->civilians_killed_by_players>=CIVILIANS_KILLED_BY_PLAYER_THRESHHOLD))
 	{
 		attitude= _hostile;
 	}
@@ -2003,7 +2046,7 @@ static short get_monster_attitude(
 		attitude= (TYPE_IS_FRIEND(definition, target_type)) ? _friendly : _neutral;
 	}
 
-//	if ((definition->class&_class_human_civilian) && MONSTER_IS_PLAYER(target))
+//	if ((definition->monster_class&_class_human_civilian) && MONSTER_IS_PLAYER(target))
 //	{
 //		dprintf("#%d vs. #%d ==> #%d", monster_index, target_index, attitude);
 //	}
@@ -2033,7 +2076,7 @@ short find_closest_appropriate_target(
 		
 		/* flood out from the aggressor monster’s polygon, searching through the object lists of all
 			polygons we encounter */
-		polygon_index= flood_map(polygon_index, LONG_MAX, monster_activation_flood_proc, _flagged_breadth_first, &flood_flags);
+		polygon_index= flood_map(polygon_index, LONG_MAX, monster_activation_flood_proc, _flagged_breadth_first, (void *)&flood_flags);
 		while (polygon_index!=NONE && closest_hostile_target_index==NONE)
 		{
 			short object_index;
@@ -2875,13 +2918,13 @@ static void execute_monster_attack(
 		world_point3d vector;
 		
 		projectile_polygon_index= position_monster_projectile(monster_index, monster->target_index, attack, &origin, (world_point3d *) NULL, &vector, object->facing);
-		new_projectile(&origin, projectile_polygon_index, &vector, attack->error, attack->type,
+		if (projectile_polygon_index!=NONE) new_projectile(&origin, projectile_polygon_index, &vector, attack->error, attack->type,
 			monster_index, monster->type, monster->target_index, FIXED_ONE);
 		if (definition->flags&_monster_fires_symmetrically)
 		{
 			attack->dy= -attack->dy;
 			projectile_polygon_index= position_monster_projectile(monster_index, monster->target_index, attack, &origin, (world_point3d *) NULL, &vector, object->facing);
-			new_projectile(&origin, projectile_polygon_index, &vector, attack->error, attack->type,
+			if (projectile_polygon_index!=NONE) new_projectile(&origin, projectile_polygon_index, &vector, attack->error, attack->type,
 				monster_index, monster->type, monster->target_index, FIXED_ONE);
 			attack->dy= -attack->dy;
 		}
@@ -2904,8 +2947,6 @@ static long monster_pathfinding_cost_function(
 	struct object_data *object;
 	short object_index;
 	long cost;
-	
-	#pragma unused (unused)
 	
 	/* base cost is the area of the polygon we’re leaving */
 	cost= source_polygon->area;
@@ -3084,7 +3125,7 @@ static short find_obstructing_terrain_feature(
 					switch (media->type)
 					{
 						case _media_water: if (definition->flags&_monster_is_not_afraid_of_water) media= (struct media_data *) NULL; break;
-						case _media_sewage: if (definition->flags&_monster_is_not_afraid_of_sewage) media= (struct media_data *) NULL; break;
+						case _media_jjaro: case _media_sewage: if (definition->flags&_monster_is_not_afraid_of_sewage) media= (struct media_data *) NULL; break;
 						case _media_lava: height= 0; if (definition->flags&_monster_is_not_afraid_of_lava) media= (struct media_data *) NULL; break;
 						case _media_goo: height= 0; if (definition->flags&_monster_is_not_afraid_of_goo) media= (struct media_data *) NULL; break;
 					}

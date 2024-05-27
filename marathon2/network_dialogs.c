@@ -55,7 +55,16 @@ struct network_speeds
 // This number needs to be changed whenever a change occurs in the networking code
 // that would make 2 versions incompatible, or a change in the game occurs that
 // would make 2 versions out of sync.
-#define MARATHON_NETWORK_VERSION 9
+// changed to "10" for marathon infinity
+// changed to "11" for Infinity Demo with InputSprocket support (to prevent play against old release)
+// changed to "12" for Infinity Full with InputSprocket (Trilogy, forces upgrade to lose serial numbers)
+#ifdef DEMO
+	#define MARATHON_NETWORK_VERSION 11
+#elif TRILOGY
+	#define MARATHON_NETWORK_VERSION 12
+#else
+	#define MARATHON_NETWORK_VERSION 10
+#endif
 
 #define fontTOP_LEVEL_FONT        130
 #define menuZONES                1002
@@ -177,7 +186,10 @@ static void draw_beveled_text_box(boolean inset, Rect *box, short bevel_size, RG
 static void menu_index_to_level_entry(short index, long entry_flags, struct entry_point *entry);
 static void fill_in_entry_points(DialogPtr dialog, short item, long entry_flags, short default_level);
 
+#ifndef VULCAN
 static MenuHandle get_popup_menu_handle(DialogPtr dialog, short item);
+#endif
+
 static void setup_dialog_for_game_type(DialogPtr dialog, short game_type);
 static void draw_player_box_with_team(Rect *rectangle, short player_index);
 
@@ -188,6 +200,9 @@ static void setup_for_timed_game(DialogPtr dialog);
 static short get_game_duration_radio(DialogPtr dialog);
 
 static boolean key_is_down(short key_code);
+
+static int menu_item_to_game_type(int menu_item);
+static int game_type_to_menu_item(int game_type);
 
 /* ---------- code */
 
@@ -222,7 +237,7 @@ boolean network_gather(
 			short current_zone_index, item_type;
 			OSErr error;
 			Cell cell;
-			short item_hit;
+			short item_hit= 0;
 
 			zones_menu= GetMHandle(menuZONES);
 			if (!zones_menu)
@@ -243,7 +258,7 @@ boolean network_gather(
 			GetDItem(dialog, iZONES_MENU, &item_type, &item_handle, &item_rectangle);
 			SetCtlValue((ControlHandle) item_handle, current_zone_index);
 			GetDItem(dialog, iNETWORK_LIST_BOX, &item_type, &item_handle, &item_rectangle);
-			setup_network_list_box(dialog, &item_rectangle, "\p*");
+			setup_network_list_box(dialog, &item_rectangle, (char *)"\p*");
 			
 			// we'll show either the zone list, or a text item "Players in Network:"
 			HideDItem(dialog, internet ? iPLAYER_LIST_TEXT : iZONES_MENU);
@@ -282,7 +297,7 @@ boolean network_gather(
 							CheckItem(zones_menu, current_zone_index, FALSE);
 							current_zone_index= GetCtlValue((ControlHandle) item_handle);
 							CheckItem(zones_menu, current_zone_index, TRUE);
-							GetItem(zones_menu, current_zone_index, temporary);
+							GetItem(zones_menu, current_zone_index, (unsigned char *)temporary);
 							GetDItem(dialog, iNETWORK_LIST_BOX, &item_type, &item_handle, &item_rectangle);
 							setup_network_list_box(dialog, &item_rectangle, temporary);
 							break;
@@ -290,7 +305,7 @@ boolean network_gather(
 				} while(item_hit!=iCANCEL && item_hit!=iOK);
 			} else {
 				/* Failed on NetGather */
-				item_hit==iCANCEL;
+				item_hit= iCANCEL;
 			}
 
 			dispose_network_list_box();
@@ -353,14 +368,14 @@ boolean network_join(
 		memcpy(myPlayerInfo.name, player_preferences->name, name_length+1);
 
 		GetDItem(dialog, iJOIN_NAME, &item_type, &item_handle, &item_rect);
-		SetIText(item_handle, myPlayerInfo.name);
+		SetIText(item_handle, (StringPtr)myPlayerInfo.name);
 		SelIText(dialog, iJOIN_NAME, 0, SHORT_MAX);
 		modify_control(dialog, iJOIN_TEAM, CONTROL_ACTIVE, player_preferences->team+1);
 		modify_control(dialog, iJOIN_COLOR, CONTROL_ACTIVE, player_preferences->color+1);
 		if (myPlayerInfo.name[0] == 0) modify_control(dialog, iOK, CONTROL_INACTIVE, NONE);
 	
 		GetDItem(dialog, iJOIN_MESSAGES, &item_type, &item_handle, &item_rect);
-		SetIText(item_handle, getpstr(temporary, strJOIN_DIALOG_MESSAGES, _join_dialog_welcome_string));
+		SetIText(item_handle, (StringPtr)getpstr(temporary, strJOIN_DIALOG_MESSAGES, _join_dialog_welcome_string));
 
 #ifdef USE_MODEM	
 		/* Adjust the transport layer using what's available */
@@ -381,7 +396,7 @@ boolean network_join(
 				case iJOIN:
 					SetPort(dialog);
 					GetDItem(dialog, iJOIN_NAME, &item_type, &item_handle, &item_rect);
-					GetIText(item_handle, temporary);
+					GetIText(item_handle, (StringPtr)temporary);
 					if (*temporary > MAX_NET_PLAYER_NAME_LENGTH) *temporary = MAX_NET_PLAYER_NAME_LENGTH;
 					pstrcpy(myPlayerInfo.name, temporary);
 					GetDItem(dialog, iJOIN_TEAM, &item_type, &item_handle, &item_rect);
@@ -392,7 +407,7 @@ boolean network_join(
 					memcpy(myPlayerInfo.long_serial_number, serial_preferences->long_serial_number, 10);
 				
 					SetCursor(*GetCursor(watchCursor));
-					did_join= NetGameJoin(myPlayerInfo.name, PLAYER_TYPE, (void *) &myPlayerInfo, sizeof(myPlayerInfo), 
+					did_join= NetGameJoin(myPlayerInfo.name, (char *)PLAYER_TYPE, (void *) &myPlayerInfo, sizeof(myPlayerInfo), 
 						MARATHON_NETWORK_VERSION);
 					
 					SetCursor(&qd.arrow);
@@ -417,7 +432,7 @@ boolean network_join(
 						write_preferences();
 	
 						GetDItem(dialog, iJOIN_MESSAGES, &item_type, &item_handle, &item_rect);
-						SetIText(item_handle, getpstr(temporary, strJOIN_DIALOG_MESSAGES, _join_dialog_waiting_string));
+						SetIText(item_handle, (StringPtr)getpstr(temporary, strJOIN_DIALOG_MESSAGES, _join_dialog_waiting_string));
 					} else {
 						/* If you fail in joining the game, print the error and return */
 						/*  to the main menu (this is primarily for modem) */
@@ -453,7 +468,7 @@ boolean network_join(
 		if (accepted_into_game)
 		{
 			successful= TRUE;
-			myGameInfo= NetGetGameData();
+			myGameInfo= (game_info *)NetGetGameData();
 			NetSetInitialParameters(myGameInfo->initial_updates_per_packet, myGameInfo->initial_update_latency);
 		}
 		else
@@ -547,7 +562,7 @@ boolean network_game_setup(
 					{
 						short new_game_type;
 						
-						new_game_type= get_dialog_control_value(dialog, iGAME_TYPE)-1;
+						new_game_type= menu_item_to_game_type(get_dialog_control_value(dialog, iGAME_TYPE));
 						
 						if(new_game_type != game_information->net_game_type)
 						{
@@ -632,7 +647,7 @@ static short fill_in_game_setup_dialog(
 	}
 	fill_in_entry_points(dialog, iENTRY_MENU, entry_flags, NONE);
 
-	modify_control(dialog, iGAME_TYPE, CONTROL_ACTIVE, network_preferences->game_type+1);
+	modify_control(dialog, iGAME_TYPE, CONTROL_ACTIVE, game_type_to_menu_item(network_preferences->game_type));
 	setup_dialog_for_game_type(dialog, network_preferences->game_type);
 	net_game_type= network_preferences->game_type;
 
@@ -642,7 +657,7 @@ static short fill_in_game_setup_dialog(
 	memcpy(player_information->name, player_preferences->name, name_length+1);
 	
 	GetDItem(dialog, iGATHER_NAME, &item_type, &item_handle, &item_rect);
-	SetIText(item_handle, player_information->name);
+	SetIText(item_handle, (StringPtr)player_information->name);
 	SelIText(dialog, iGATHER_NAME, 0, SHORT_MAX);
 
 	/* Set the menu values */
@@ -755,7 +770,7 @@ static void extract_setup_dialog_information(
 	
 	// get player information
 	GetDItem(dialog, iGATHER_NAME, &item_type, &item_handle, &item_rect);
-	GetIText(item_handle, temporary);
+	GetIText(item_handle, (StringPtr)temporary);
 	if (*temporary > MAX_NET_PLAYER_NAME_LENGTH) 
 		*temporary = MAX_NET_PLAYER_NAME_LENGTH;
 	pstrcpy(player_information->name, temporary);
@@ -767,7 +782,7 @@ static void extract_setup_dialog_information(
 	player_preferences->team= player_information->team;
 
 	game_information->server_is_playing = TRUE;
-	game_information->net_game_type= get_dialog_control_value(dialog, iGAME_TYPE)-1;
+	game_information->net_game_type= menu_item_to_game_type(get_dialog_control_value(dialog, iGAME_TYPE));
 
 	// get game information
 	game_information->game_options= get_dialog_game_options(dialog, game_information->net_game_type);
@@ -900,7 +915,7 @@ static void fill_in_entry_points(
 		menu_index++;
 		if(entry.level_name[0])
 		{
-			SetItem(menu, menu_index, entry.level_name);
+			SetItem(menu, menu_index, (StringPtr)entry.level_name);
 		}
 
 		if(entry.level_number==default_level) 
@@ -988,7 +1003,7 @@ boolean check_setup_information(
 		else
 		{
 			GetDItem(dialog, iGATHER_NAME, &item_type, &item_handle, &item_rect);
-			GetIText(item_handle, temporary);
+			GetIText(item_handle, (StringPtr)temporary);
 			if (*temporary == 0)
 			{
 				bad_item = iGATHER_NAME;
@@ -1228,12 +1243,12 @@ static pascal Boolean join_dialog_filter_proc(
 		case netPlayerAdded:
 			if(last_join_state==netWaiting)
 			{
-				game_info *info= NetGetGameData();
+				game_info *info= (game_info *)NetGetGameData();
 
 				GetDItem(dialog, iJOIN_MESSAGES, &item_type, &item_handle, &item_rect);
 				get_network_joined_message(temporary, info->net_game_type);
 				c2pstr(temporary);
-				SetIText(item_handle, temporary);
+				SetIText(item_handle, (StringPtr)temporary);
 			}
 			update_player_list_item(dialog, iPLAYER_DISPLAY_AREA);
 			break;
@@ -1249,7 +1264,7 @@ static pascal Boolean join_dialog_filter_proc(
 	last_join_state= join_state;
 
 	GetDItem(dialog, iJOIN_NAME, &item_type, &item_handle, &item_rect);
-	GetIText(item_handle, temporary);
+	GetIText(item_handle, (StringPtr)temporary);
 	if (join_state == NONE && *temporary)
 		modify_control(dialog, iOK, CONTROL_ACTIVE, NONE);
 	else
@@ -1271,7 +1286,7 @@ static pascal Boolean game_setup_filter_proc(
 	EventRecord *event,
 	short *item_hit)
 {
-	#pragma unused(event, item_hit);
+	#pragma unused(event, item_hit)
 	
 	Rect     item_rect;
 	short    item_type;
@@ -1281,7 +1296,7 @@ static pascal Boolean game_setup_filter_proc(
 	GetPort(&old_port);
 	SetPort(dialog);
 	GetDItem(dialog, iGATHER_NAME, &item_type, &item_handle, &item_rect);
-	GetIText(item_handle, temporary);
+	GetIText(item_handle, (StringPtr)temporary);
 	if (*temporary)
 		modify_control(dialog, iOK, CONTROL_ACTIVE, NONE);
 	else
@@ -1331,7 +1346,7 @@ static void setup_network_list_box(
 	}
 
 	/* spawn an asynchronous network name lookup */
-	error= NetLookupOpen("\p=", PLAYER_TYPE, zone, MARATHON_NETWORK_VERSION,
+	error= NetLookupOpen((char *)"\p=", (char *)PLAYER_TYPE, zone, MARATHON_NETWORK_VERSION,
 		network_list_box_update_proc, NetEntityNotInGame);
 	if (error!=noErr) dprintf("NetLookupOpen() returned %d", error);
 
@@ -1470,7 +1485,7 @@ static void reassign_player_colors(
 #pragma unused(player_index)
 
 	assert(num_players<=MAXIMUM_NUMBER_OF_PLAYERS);
-	game= NetGetGameData();
+	game= (game_info *)NetGetGameData();
 
 	memset(colors_taken, FALSE, sizeof(colors_taken));
 	memset(actual_colors, NONE, sizeof(actual_colors));
@@ -1481,7 +1496,7 @@ static void reassign_player_colors(
 		
 		for(index= 0; index<num_players; ++index)
 		{
-			player_info *player= NetGetPlayerData(index);
+			player_info *player= (player_info *)NetGetPlayerData(index);
 			if(!colors_taken[player->desired_color])
 			{
 				player->color= player->desired_color;
@@ -1494,7 +1509,7 @@ static void reassign_player_colors(
 		/* Now give them a random color.. */
 		for (index= 0; index<num_players; index++)
 		{
-			player_info *player= NetGetPlayerData(index);
+			player_info *player= (player_info *)NetGetPlayerData(index);
 
 			if (actual_colors[index]==NONE) // This player needs a team
 			{
@@ -1523,7 +1538,7 @@ static void reassign_player_colors(
 			// let's mark everybody down for the teams that they can get without conflicts.
 			for (index = 0; index < num_players; index++)
 			{
-				player_info *player= NetGetPlayerData(index);
+				player_info *player= (player_info *)NetGetPlayerData(index);
 		
 				if (player->team==team_color && !colors_taken[player->desired_color])
 				{
@@ -1536,7 +1551,7 @@ static void reassign_player_colors(
 			// ok, everyone remaining gets a team that we pick for them.
 			for (index = 0; index < num_players; index++)
 			{
-				player_info *player= NetGetPlayerData(index);
+				player_info *player= (player_info *)NetGetPlayerData(index);
 	
 				if (player->team==team_color && actual_colors[index]==NONE) // This player needs a team
 				{
@@ -1586,6 +1601,7 @@ static void menu_index_to_level_entry(
 	return;
 }
 
+#ifndef VULCAN
 static MenuHandle get_popup_menu_handle(
 	DialogPtr dialog,
 	short item)
@@ -1608,6 +1624,7 @@ static MenuHandle get_popup_menu_handle(
 
 	return menu;
 }
+#endif
 
 #ifdef TEST_NET_STATS_DIALOG
 static void fake_initialize_stat_data(void)
@@ -1647,11 +1664,11 @@ static void setup_dialog_for_game_type(
 		
 			GetDItem(dialog, iRADIO_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, killLimitString);
-			SetCTitle((ControlHandle) item, temporary);
+			SetCTitle((ControlHandle) item, (StringPtr)temporary);
 			
 			GetDItem(dialog, iTEXT_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, killsString);
-			SetIText(item, temporary);
+			SetIText(item, (StringPtr)temporary);
 
 			/* Untimed.. */
 			setup_for_untimed_game(dialog);
@@ -1666,11 +1683,11 @@ static void setup_dialog_for_game_type(
 
 			GetDItem(dialog, iRADIO_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, killLimitString);
-			SetCTitle((ControlHandle) item, temporary);
+			SetCTitle((ControlHandle) item, (StringPtr)temporary);
 			
 			GetDItem(dialog, iTEXT_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, killsString);
-			SetIText(item, temporary);
+			SetIText(item, (StringPtr)temporary);
 
 			setup_for_timed_game(dialog);
 			break;
@@ -1682,11 +1699,11 @@ static void setup_dialog_for_game_type(
 
 			GetDItem(dialog, iRADIO_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, flagPullsString);
-			SetCTitle((ControlHandle) item, temporary);
+			SetCTitle((ControlHandle) item, (StringPtr)temporary);
 			
 			GetDItem(dialog, iTEXT_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, flagsString);
-			SetIText(item, temporary);
+			SetIText(item, (StringPtr)temporary);
 
 			setup_for_timed_game(dialog);
 			break;
@@ -1698,11 +1715,11 @@ static void setup_dialog_for_game_type(
 
 			GetDItem(dialog, iRADIO_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, pointLimitString);
-			SetCTitle((ControlHandle) item, temporary);
+			SetCTitle((ControlHandle) item, (StringPtr)temporary);
 			
 			GetDItem(dialog, iTEXT_KILL_LIMIT, &item_type, &item, &bounds);
 			getpstr(temporary, strSETUP_NET_GAME_MESSAGES, pointsString);
-			SetIText(item, temporary);
+			SetIText(item, (StringPtr)temporary);
 
 			setup_for_timed_game(dialog);
 			break;
@@ -1796,7 +1813,7 @@ static void draw_player_box_with_team(
 	text_box= *rectangle;
 	InsetRect(&text_box, NAME_BEVEL_SIZE, NAME_BEVEL_SIZE);
 	pstrcpy(temporary, player->name); 
-	p2cstr(temporary);
+	p2cstr((StringPtr)temporary);
 	_draw_screen_text(temporary, (screen_rectangle *) &text_box, 
 		_center_horizontal|_center_vertical, _net_stats_font, _white_color);		
 
@@ -1983,7 +2000,8 @@ void display_net_game_stats(
 
 	/* Calculate the rankings (once) for the entire graph */
 	calculate_rankings(rankings, dynamic_world->player_count);
-	qsort(rankings, dynamic_world->player_count, sizeof(struct net_rank), rank_compare);
+	qsort(rankings, dynamic_world->player_count, sizeof(struct net_rank),
+		(int (*)(const void *, const void *)) rank_compare);
 
 	/* Create the graph popup menu */
 	current_graph_selection= create_graph_popup_menu(dialog, iGRAPH_POPUP);
@@ -2059,14 +2077,14 @@ static short create_graph_popup_menu(
 		strcpy(temporary, player->name); 
 		c2pstr(temporary);
 		AppendMenu(graph_popup, "\p ");
-		SetItem(graph_popup, index+1, temporary); // +1 since it is 1's based
+		SetItem(graph_popup, index+1, (StringPtr)temporary); // +1 since it is 1's based
 	}
 	
 	/* Add in the separator line */
 	AppendMenu(graph_popup, "\p-");
 
 	/* Add in the total carnage.. */
-	AppendMenu(graph_popup, getpstr(temporary, strNET_STATS_STRINGS, strTOTALS_STRING));
+	AppendMenu(graph_popup, (StringPtr)getpstr(temporary, strNET_STATS_STRINGS, strTOTALS_STRING));
 	current_graph_selection= CountMItems(graph_popup);
 	
 	/* Add in the scores */
@@ -2074,7 +2092,7 @@ static short create_graph_popup_menu(
 	if(has_scores)
 	{
 		c2pstr(temporary);
-		AppendMenu(graph_popup, temporary);
+		AppendMenu(graph_popup, (StringPtr)temporary);
 		current_graph_selection= CountMItems(graph_popup);
 	}
 	
@@ -2084,13 +2102,13 @@ static short create_graph_popup_menu(
 		/* Separator line */
 		if(has_scores) AppendMenu(graph_popup, "\p-");
 
-		AppendMenu(graph_popup, getpstr(temporary, strNET_STATS_STRINGS, strTEAM_TOTALS_STRING));
+		AppendMenu(graph_popup, (StringPtr)getpstr(temporary, strNET_STATS_STRINGS, strTEAM_TOTALS_STRING));
 
 		if(has_scores)
 		{
 			get_network_score_text_for_postgame(temporary, TRUE);
 			c2pstr(temporary);
-			AppendMenu(graph_popup, temporary);
+			AppendMenu(graph_popup, (StringPtr)temporary);
 		}
 	} 
 
@@ -2625,7 +2643,7 @@ static void draw_kill_bars(
 	getcstr(kill_string_format, strNET_STATS_STRINGS, strTOTAL_KILLS_STRING);
 	psprintf(temporary, kill_string_format, total_kills, kpm);
 	GetDItem(dialog, iTOTAL_KILLS, &item_type, &item_handle, &item_rect);
-	SetIText(item_handle, temporary);
+	SetIText(item_handle, (StringPtr)temporary);
 
 	if (minutes > 0) dpm = total_deaths / minutes;
 	else dpm = 0;
@@ -2643,7 +2661,7 @@ static void draw_kill_bars(
 	else
 		psprintf(temporary, death_string_format, total_deaths, dpm);
 	GetDItem(dialog, iTOTAL_DEATHS, &item_type, &item_handle, &item_rect);
-	SetIText(item_handle, temporary);
+	SetIText(item_handle, (StringPtr)temporary);
 	
 	return;
 }
@@ -2688,9 +2706,10 @@ static void draw_beveled_text_box(
 	color = inset || !name_box ? _black_color : _white_color;
 	inset_box = *box; 
 	InsetRect(&inset_box, bevel_size, bevel_size);
+	
 	text_box.top = inset_box.top; text_box.bottom = inset_box.bottom;
 	text_box.left = inset_box.left; text_box.right = inset_box.right;
-	_draw_screen_text(text, &text_box, flags, _net_stats_font, color);		
+	_draw_screen_text(text, &text_box, flags, _net_stats_font, color);
 }
 
 static void draw_beveled_box(
@@ -2872,7 +2891,7 @@ static void draw_team_totals_graph(
 	{
 		ranks[team_index].ranking= ranks[team_index].kills - ranks[team_index].deaths;
 	}
-	qsort(ranks, num_teams, sizeof(struct net_rank), team_rank_compare);
+	qsort(ranks, num_teams, sizeof(struct net_rank), (int (*)(const void *, const void *)) team_rank_compare);
 	
 	draw_names(dialog, ranks, num_teams, NONE);
 	draw_kill_bars(dialog, ranks, num_teams, NONE, TRUE, TRUE);
@@ -2889,7 +2908,8 @@ static void draw_total_scores_graph(
 	memcpy(ranks, rankings, dynamic_world->player_count*sizeof(struct net_rank));
 
 	/* First qsort the rankings arrray by game_ranking.. */
-	qsort(ranks, dynamic_world->player_count, sizeof(struct net_rank), score_rank_compare);
+	qsort(ranks, dynamic_world->player_count, sizeof(struct net_rank),
+		(int (*)(const void *, const void *)) score_rank_compare);
 
 	/* Draw the names. */
 	draw_names(dialog, ranks, dynamic_world->player_count, NONE);
@@ -2930,7 +2950,7 @@ static void draw_team_total_scores_graph(
 	}
 
 	/* Now qsort our team stuff. */
-	qsort(ranks, team_count, sizeof(struct net_rank), score_rank_compare);
+	qsort(ranks, team_count, sizeof(struct net_rank), (int (*)(const void *, const void *)) score_rank_compare);
 	
 	/* And draw the bars.. */
 	draw_names(dialog, ranks, team_count, NONE);
@@ -2947,7 +2967,7 @@ static void calculate_maximum_bar(
 
 	GetDItem(dialog, iDAMAGE_STATS, &item_type, &item_handle, &item_rect);
 	kill_bar_rect->left = item_rect.left + GRAPH_LEFT_INSET + NAME_BOX_WIDTH + GRAPH_BAR_SPACING;
-	kill_bar_rect->right = item_rect.right - GRAPH_RIGHT_INSET - kill_bar_rect->left;
+	kill_bar_rect->right = item_rect.right - GRAPH_RIGHT_INSET;
 	kill_bar_rect->top = item_rect.top + GRAPH_TOP_INSET;
 	kill_bar_rect->bottom = kill_bar_rect->top + NAME_BOX_HEIGHT;
 }
@@ -2959,6 +2979,7 @@ static void draw_score_bars(
 {
 	short index, maximum_width;
 	long highest_ranking= LONG_MIN;
+	long lowest_ranking= LONG_MAX;
 	Rect maximum_bar, bar;
 	RGBColor color;
 	short item_type;
@@ -2967,6 +2988,7 @@ static void draw_score_bars(
 	for(index= 0; index<bar_count; ++index)
 	{
 		if(ranks[index].game_ranking>highest_ranking) highest_ranking= ranks[index].game_ranking;
+		if(ranks[index].game_ranking<lowest_ranking) lowest_ranking= ranks[index].game_ranking;
 	}
 
 	calculate_maximum_bar(dialog, &maximum_bar);
@@ -2975,29 +2997,48 @@ static void draw_score_bars(
 
 	get_net_color(_score_color, &color);
 
-	if(highest_ranking)
+	for(index= 0; index<bar_count; ++index)
 	{
-		for(index= 0; index<bar_count; ++index)
+		/* Get the text. */
+		calculate_ranking_text_for_post_game(temporary, ranks[index].game_ranking);
+
+		/* Build the bar. */		
+		if (highest_ranking <= 0)
 		{
-			/* Get the text. */
-			calculate_ranking_text_for_post_game(temporary, ranks[index].game_ranking);
-	
-			/* Build the bar. */		
+			bar.right= bar.left + (ranks[index].game_ranking*maximum_width)/lowest_ranking;
+		}
+		else
+		{
 			bar.right= bar.left + (ranks[index].game_ranking*maximum_width)/highest_ranking;
-	
+		}
+		
+		// if the ranking won't fit in the box, draw it to the right of the bar
+		if (_text_width(temporary, _net_stats_font) > (bar.right - bar.left - (NAME_BEVEL_SIZE * 2)))
+		{
+			screen_rectangle	text_box;
+			
+			text_box.left = bar.right + RANKING_INSET;
+			text_box.right = bar.right + 1000;	// out to the moon
+			text_box.top = bar.top;
+			text_box.bottom = bar.bottom;
+			draw_beveled_box(FALSE, &bar, NAME_BEVEL_SIZE, &color);
+			_draw_screen_text(temporary, &text_box, _center_vertical, _net_stats_font, _black_color);
+		}
+		else
+		{		
 			/* Draw it! */
 			draw_beveled_text_box(FALSE, &bar, NAME_BEVEL_SIZE, &color, temporary, 
 				_right_justified|_center_vertical, FALSE);
-	
-			OffsetRect(&bar, 0, NAME_BOX_HEIGHT + GRAPH_BAR_SPACING);
 		}
+
+		OffsetRect(&bar, 0, NAME_BOX_HEIGHT + GRAPH_BAR_SPACING);
 	}
 
 	/* And clear the text. */
 	GetDItem(dialog, iTOTAL_DEATHS, &item_type, &item_handle, &bar);
-	SetIText(item_handle, "");
+	SetIText(item_handle, (StringPtr)"");
 	GetDItem(dialog, iTOTAL_KILLS, &item_type, &item_handle, &bar);
-	SetIText(item_handle, "");
+	SetIText(item_handle, (StringPtr)"");
 }
 
 static boolean will_new_mode_reorder_dialog(
@@ -3160,6 +3201,24 @@ static boolean key_is_down(
 {
 	KeyMap key_map;
 	
-	GetKeys(&key_map);
+	GetKeys(key_map);
 	return ((((byte*)key_map)[key_code>>3] >> (key_code & 7)) & 1);
+}
+
+static int menu_item_to_game_type(
+	int menu_item)
+{
+	int table[]= {	_game_of_kill_monsters, _game_of_cooperative_play, /* _game_of_capture_the_flag, */
+					_game_of_king_of_the_hill, _game_of_kill_man_with_ball, /* _game_of_defense, */
+					/* _game_of_rugby, */ _game_of_tag	};
+					
+	return table[menu_item-1];
+}
+
+static int game_type_to_menu_item(
+	int game_type)
+{
+	int table[]= {	1, 2, NONE, 3, 4, NONE, NONE, 5	};
+	
+	return table[game_type];
 }

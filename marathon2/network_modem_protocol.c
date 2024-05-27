@@ -220,7 +220,7 @@ struct player_packet_data {
 
 struct server_packet_data {
 	unsigned long sequence;
-	long flags[0]; // this is actually number_of_players flags....
+	long flags[1]; // this is actually number_of_players flags....
 };
 
 /*
@@ -526,7 +526,7 @@ short ModemAddDistributionFunction(
 	NetDistributionProc proc, 
 	boolean lossy)
 {
-#pragma unused(proc, lossy);
+#pragma unused(proc, lossy)
 	return NONE;
 }
 
@@ -536,14 +536,14 @@ void ModemDistributeInformation(
 	short buffer_size, 
 	boolean send_to_self)
 {
-#pragma unused(type, buffer, buffer_size, send_to_self);
+#pragma unused(type, buffer, buffer_size, send_to_self)
 	return;
 }
 
 void ModemRemoveDistributionFunction(
 	short type)
 {
-#pragma unused(type);
+#pragma unused(type)
 	return;
 }
 
@@ -575,7 +575,7 @@ boolean ModemGatherPlayer(
 	boolean success= FALSE;
 	long initial_tick_count= machine_tick_count();
 
-#pragma unused (player_index);	
+#pragma unused (player_index)
 	assert(modemState==netGathering);
 	assert(topology->player_count<MAXIMUM_NUMBER_OF_NETWORK_PLAYERS);
 	
@@ -584,7 +584,7 @@ boolean ModemGatherPlayer(
 	{
 		byte packet_type;
 		boolean got_packet;
-		struct accept_join_data	*accept_packet= packet_buffers[_incoming_packet];
+		struct accept_join_data	*accept_packet= (struct accept_join_data *)packet_buffers[_incoming_packet];
 		struct join_player_data packet;
 
 		/* Send the join player packet.. */
@@ -838,7 +838,7 @@ boolean ModemChangeMap(
 		// being the server, we must send out the map to everyone.	
 		if(status->localPlayerIndex==status->server_player_index) 
 		{
-			wad= get_map_for_net_transfer(entry);
+			wad= (byte *)get_map_for_net_transfer(entry);
 			if(wad)
 			{
 				length= get_net_map_data_length(wad);
@@ -890,8 +890,8 @@ short ModemUpdateJoinState(
 				got_packet= modem_read_packet(&packet_type, packet_buffers[_incoming_packet]);
 				if(got_packet)
 				{
-					struct join_player_data *packet= packet_buffers[_incoming_packet];
-					struct accept_join_data	*accept_packet= packet_buffers[_outgoing_packet];
+					struct join_player_data *packet= (struct join_player_data *)packet_buffers[_incoming_packet];
+					struct accept_join_data	*accept_packet= (struct accept_join_data *)packet_buffers[_outgoing_packet];
 
 					switch(packet_type)
 					{
@@ -1182,7 +1182,7 @@ static void build_server_packet(
 static void handle_single_player(
 	void)
 {
-	struct server_packet_data *packet_data= packet_buffers[_incoming_packet];
+	struct server_packet_data *packet_data= (struct server_packet_data *)packet_buffers[_incoming_packet];
 
 	packet_data->sequence= status->sequence;
 	packet_data->flags[status->localPlayerIndex]= parse_keymap();
@@ -1252,7 +1252,7 @@ static short server_packet_size(
 	short size;
 	
 	assert(topology);
-	size= sizeof(struct server_packet_data)+(topology->player_count*sizeof(long));
+	size= sizeof(struct server_packet_data)-sizeof(long)+(topology->player_count*sizeof(long));
 	
 	return size;
 }
@@ -1363,7 +1363,7 @@ static OSErr send_acknowledged_packet(
 				got_packet= modem_read_packet(&packet_type, packet_buffers[_incoming_packet]);
 				if(got_packet && packet_type==_acknowledge_packet)
 				{
-					struct acknowledge_packet *packet= packet_buffers[_incoming_packet];
+					struct acknowledge_packet *packet= (struct acknowledge_packet *)packet_buffers[_incoming_packet];
 					
 //					if(packet->sequence==ACKNOWLEDGE_ACTION_FLAG)
 					done= TRUE;
@@ -1393,7 +1393,7 @@ static OSErr modem_send_packet(
 	header.packet_type= packet_type;
 	header.checksum= 0;
 	
-	data= buffer;
+	data= (byte *)buffer;
 	for(index= 0; index<size; ++index)
 	{
 		header.checksum+= *data++;
@@ -1496,7 +1496,7 @@ static boolean modem_read_packet(
 
 					/* Copy it in.. */
 					/* Now read the bytes in, based on the packet length */
-					dest= buffer;
+					dest= (byte *)buffer;
 					source= &stream_read_queue.data[new_read_index];
 					actual_checksum= 0;
 					while(--size>=0)
@@ -1719,7 +1719,7 @@ static OSErr send_stream_data_with_progress(
 #endif
 		for(sequence= 0, error= noErr, timed_out= FALSE; sequence<block_count && !error && !timed_out; ++sequence)
 		{
-			struct stream_packet_data *data_packet= packet_buffers[_outgoing_packet];
+			struct stream_packet_data *data_packet= (struct stream_packet_data *)packet_buffers[_outgoing_packet];
 			long block_size;
 			boolean acknowledged;
 			
@@ -1750,7 +1750,7 @@ static OSErr send_stream_data_with_progress(
 					got_packet= modem_read_packet(&packet_type, packet_buffers[_incoming_packet]);
 					if(got_packet && packet_type==_stream_acknowledge_packet)
 					{
-						struct stream_acknowledge_packet *packet= packet_buffers[_incoming_packet];
+						struct stream_acknowledge_packet *packet= (struct stream_acknowledge_packet *)packet_buffers[_incoming_packet];
 						
 						if(packet->sequence==sequence) 
 						{
@@ -1809,7 +1809,7 @@ static long receive_stream_size(
 		got_packet= modem_read_packet(&packet_type, packet_buffers[_incoming_packet]);
 		if (got_packet && packet_type==_stream_size_packet)	
 		{
-			struct stream_size_packet *packet= packet_buffers[_incoming_packet];	
+			struct stream_size_packet *packet= (struct stream_size_packet *)packet_buffers[_incoming_packet];	
 
 			/* Acknowledge the first map packet.. */	
 			send_acknowledge(0l);
@@ -1850,7 +1850,7 @@ static OSErr receive_stream_data_with_progress(
 		got_packet= modem_read_packet(&packet_type, packet_buffers[_incoming_packet]);
 		if(got_packet && packet_type==_stream_packet)
 		{
-			struct stream_packet_data *data_packet= packet_buffers[_incoming_packet];
+			struct stream_packet_data *data_packet= (struct stream_packet_data *)packet_buffers[_incoming_packet];
 
 			/* Acknowledge this sequence...*/
 			if(data_packet->sequence==sequence || data_packet->sequence<sequence)
@@ -1945,11 +1945,11 @@ OSErr ModemRegisterName(
 	short socket)
 {
 #pragma unused (socket)
-	sprintf(lookup_packet.entity.objStr, "%P", player_name);
-	c2pstr(lookup_packet.entity.objStr);
-	sprintf(lookup_packet.entity.typeStr, "%P%d", type, version);
-	c2pstr(lookup_packet.entity.typeStr);
-	strcpy(lookup_packet.entity.zoneStr, "");
+	sprintf((char *)lookup_packet.entity.objStr, "%P", player_name);
+	c2pstr((char *)lookup_packet.entity.objStr);
+	sprintf((char *)lookup_packet.entity.typeStr, "%P%d", type, version);
+	c2pstr((char *)lookup_packet.entity.typeStr);
+	strcpy((char *)lookup_packet.entity.zoneStr, "");
 	
 #ifdef DEBUG
 	lookup_data_valid= TRUE;
@@ -2010,7 +2010,7 @@ OSErr ModemLookupOpen(
 {
 	OSErr err= noErr;
 
-#pragma unused(name, type, zone, version);
+#pragma unused(name, type, zone, version)
 	
 	lookup_data= (struct lookup_data *) NewPtrClear(sizeof(struct lookup_data));
 	if(lookup_data)
@@ -2065,7 +2065,7 @@ void ModemLookupUpdate(
 	void)
 {
 	boolean got_packet;
-	struct lookup_query_data *query_packet= packet_buffers[_outgoing_packet];
+	struct lookup_query_data *query_packet= (struct lookup_query_data *)packet_buffers[_outgoing_packet];
 	byte packet_type;
 
 	assert(lookup_data);
@@ -2153,7 +2153,7 @@ static boolean modem_read_fake_packet(
 		/* Create fake client packet.. */
 		struct player_packet_data *packet;
 		
-		packet= data;
+		packet= (struct player_packet_data *)data;
 		packet->action_flag= parse_keymap();
 		packet->sequence= status->sequence;
 		*packet_type= _client_packet;
@@ -2161,7 +2161,7 @@ static boolean modem_read_fake_packet(
 		/* Create fake server packet.. */
 		struct server_packet_data *packet;
 		
-		packet= data;
+		packet= (struct server_packet_data *)data;
 		packet->sequence= status->sequence;
 		packet->flags[0]= parse_keymap();
 		packet->flags[1]= parse_keymap();
@@ -2225,7 +2225,7 @@ boolean packet_tickler(
 				/* If we are the server... */
 				if(status->server_player_index==status->localPlayerIndex)
 				{
-					struct player_packet_data *player_packet= packet_buffers[_incoming_packet];
+					struct player_packet_data *player_packet= (struct player_packet_data *)packet_buffers[_incoming_packet];
 
 					/* Process the packet.. */
 					if(status->sequence==player_packet->sequence)
@@ -2287,7 +2287,7 @@ boolean packet_tickler(
 			case _server_packet:
 				if(status->server_player_index != status->localPlayerIndex)
 				{
-					struct server_packet_data *packet_data= packet_buffers[_incoming_packet];
+					struct server_packet_data *packet_data= (struct server_packet_data *)packet_buffers[_incoming_packet];
 					
 #ifdef DEBUG_MODEM
 					modem_stats.server_packets_received++;
@@ -2418,8 +2418,8 @@ static boolean network_queueing_task(
 static void build_and_post_async_client_packet(
 	unsigned long sequence)
 {
-	struct stream_header *header= packet_buffers[_outgoing_packet];
-	struct player_packet_data *packet= ((byte *) packet_buffers[_outgoing_packet]+sizeof(struct stream_header));
+	struct stream_header *header= (struct stream_header *)packet_buffers[_outgoing_packet];
+	struct player_packet_data *packet= (struct player_packet_data *) ((byte *) packet_buffers[_outgoing_packet]+sizeof(struct stream_header));
 	short index;
 	byte *data;
 	
@@ -2447,8 +2447,8 @@ static void build_and_post_async_client_packet(
 static void build_and_post_async_server_packet(
 	void)
 {
-	struct server_packet_data *server_packet= ((byte *) packet_buffers[_outgoing_packet]+sizeof(struct stream_header));
-	struct stream_header *header= packet_buffers[_outgoing_packet];
+	struct server_packet_data *server_packet= (struct server_packet_data *) ((byte *) packet_buffers[_outgoing_packet]+sizeof(struct stream_header));
+	struct stream_header *header= (struct stream_header *)packet_buffers[_outgoing_packet];
 	byte *data;
 	short index;
 

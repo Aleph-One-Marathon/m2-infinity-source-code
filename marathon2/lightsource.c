@@ -13,7 +13,7 @@ Monday, July 10, 1995 5:20:26 PM  (Jason)
 	stateless (six phase) lights.
 */
 
-#include <cseries.h>
+#include "cseries.h"
 
 #include "map.h"
 #include "lightsource.h"

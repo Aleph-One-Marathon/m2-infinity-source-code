@@ -1,0 +1,6 @@
+Directory "gungnir:marathon2:"
+Set Target "marathon2"
+
+duplicate -y {Target}.ppc {Target}.fat
+noresnames {Target}.fat
+rez {Target}.r -d CODE_FILE=∂"{Target}.68k∂" -append -o {Target}.fat

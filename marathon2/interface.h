@@ -149,6 +149,10 @@ struct shape_animation_data
 	short low_level_shape_indexes[1];
 };
 
+/* ---------- globals */
+
+extern boolean no_frame_rate_limit;
+
 /* ---------- prototypes/SHELL.C */
 
 enum { /* controllers */
@@ -304,8 +308,8 @@ short dequeue_keymaps(short count, long *buffer);
 /* ---------- prototypes/GAME_DIALOGS.C */
 
 boolean handle_preferences_dialog(void);
-void handle_load_game(void);
 void handle_save_game(void);
+void ask_for_serial_number(void);
 boolean handle_start_game(void);
 boolean quit_without_saving(void);
 
@@ -331,4 +335,10 @@ void import_definition_structures(void);
 
 /* ---------- prototypes/KEYBOARD_DIALOG.C */
 boolean configure_key_setup(short *keycodes);
+
+/* goo used in preferences.c - michael evans */
+void	display_screen(short base_pict_id);
+void force_system_colors(void);
+void interface_fade_out(short pict_resource_number, boolean fade_music);
+
 #endif

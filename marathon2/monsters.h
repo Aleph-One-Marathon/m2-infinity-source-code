@@ -80,6 +80,10 @@ enum /* monster types */
 	_monster_tiny_fighter,
 	_monster_tiny_bob,
 	_monster_tiny_yeti,
+	_vacuum_civilian_crew,
+	_vacuum_civilian_science,
+	_vacuum_civilian_security,
+	_vacuum_civilian_assimilated,
 	NUMBER_OF_MONSTER_TYPES
 };
 

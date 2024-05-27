@@ -5,9 +5,9 @@ Monday, May 30, 1994 9:04:01 PM
 
 /* ---------- macros */
 
-#define TYPE_IS_NEUTRAL(definition,type) (!((definition->friends|definition->enemies)&monster_definitions[type].class))
-#define TYPE_IS_ENEMY(definition,type) (definition->enemies&monster_definitions[type].class)
-#define TYPE_IS_FRIEND(definition,type) (definition->friends&monster_definitions[type].class)
+#define TYPE_IS_NEUTRAL(definition,type) (!((definition->friends|definition->enemies)&monster_definitions[type].monster_class))
+#define TYPE_IS_ENEMY(definition,type) (definition->enemies&monster_definitions[type].monster_class)
+#define TYPE_IS_FRIEND(definition,type) (definition->friends&monster_definitions[type].monster_class)
 
 /* ---------- constants */
 
@@ -152,7 +152,7 @@ struct monster_definition /* <128 bytes */
 	unsigned long immunities, weaknesses;
 	unsigned long flags;
 
-	long class; /* our class */
+	long monster_class; /* our class */
 	long friends, enemies; /* bit fields of what classes we consider friendly and what types we don’t like */
 
 	fixed sound_pitch;
@@ -193,6 +193,7 @@ struct monster_definition /* <128 bytes */
 
 /* ---------- monster definitions */
 
+#ifndef DONT_COMPILE_DEFINITIONS
 struct monster_definition monster_definitions[NUMBER_OF_MONSTER_TYPES]=
 {
 	{ /* _monster_marine (can’t be used as a regular monster) */
@@ -2619,4 +2620,219 @@ struct monster_definition monster_definitions[NUMBER_OF_MONSTER_TYPES]=
 			0, 0, WORLD_ONE/5, /* dx, dy, dz */
 		}
 	},
+
+	{ /* _civilian_crew "bob" */
+		BUILD_COLLECTION(_collection_vacuum_civilian, 0), /* shape collection */
+		20, 0, 0, /* vitality, immunities, weaknesses */
+		_monster_attacks_immediately|_monster_is_omniscent|_monster_cannot_be_dropped|_monster_waits_with_clear_shot|_monster_can_die_in_flames|_monster_uses_sniper_ledges, /* flags */
+
+		_class_human_civilian, /* class */	
+		_class_human, /* friends */
+		(_class_hostile_alien^_class_assimilated_civilian)|_class_native, /* enemies */
+	
+		_normal_frequency, /* sound pitch */	
+		_snd_fusion_human_activation, _snd_fusion_kill_the_player, _snd_fusion_human_clear, _snd_fusion_human_trash_talk, _snd_fusion_human_apology, _snd_fusion_human_stop_shooting_me_you_bastard, /* sounds: activation, friendly activation, clear, kill, apology, friendly-fire */
+		_snd_fusion_human_wail, /* dying flaming */
+		_snd_fusion_human_chatter, 0x1f, /* random sound, random sound mask */
+
+		_i_plasma_magazine, /* carrying item type */
+	
+		WORLD_ONE/5, (4*WORLD_ONE)/5, /* radius, height */
+		0, /* preferred hover height */
+		-2*WORLD_ONE, WORLD_ONE/3, /* minimum ledge delta, maximum ledge delta */
+		FIXED_ONE, /* external velocity scale */
+		_effect_vacuum_civilian_blood_splash, NONE, NONE, /* impact effect, melee impact effect, contrail effect */
+	
+		QUARTER_CIRCLE, QUARTER_CIRCLE/3, /* half visual arc, half vertical visual arc */
+		30*WORLD_ONE, WORLD_ONE, /* visual range, dark visual range */
+		_intelligence_high, /* intelligence */
+		_speed_blinding, /* speed */
+		NORMAL_MONSTER_GRAVITY, NORMAL_MONSTER_TERMINAL_VELOCITY, /* gravity, terminal velocity */
+		_vidmaster_door_retry_mask, /* door retry mask */
+		NONE, {NONE, 0, 0, 0}, /* shrapnel radius, shrapnel damage */
+		
+		10, /* being hit */
+		2, 1, /* dying hard (popping), dying soft (falling) */
+		4, 3, /* hard dead frames, soft dead frames */
+		6, 0, /* stationary shape, moving shape */
+		9, 8, /* teleport in shape, teleport out shape */
+		
+		3*TICKS_PER_SECOND, /* attack frequency (for both melee and ranged attacks) */
+		
+		/* melee attack */
+		{
+			NONE, /* melee attack type */
+		},
+		
+		/* ranged attack */
+		{
+			_projectile_fusion_bolt_minor, /* ranged attack type */
+			1, /* repetitions */
+			NUMBER_OF_ANGLES/150, /* error angle */
+			10*WORLD_ONE, /* range */
+			5, /* ranged attack shape */
+			
+			0, 0, WORLD_ONE*3/4, /* dx, dy, dz */
+		}
+	},
+
+	{ /* _civilian_science "fred" */
+		BUILD_COLLECTION(_collection_vacuum_civilian, 1), /* shape collection */
+		25, 0, 0, /* vitality, immunities, weaknesses */
+		_monster_attacks_immediately|_monster_is_omniscent|_monster_cannot_be_dropped|_monster_waits_with_clear_shot|_monster_can_die_in_flames|_monster_uses_sniper_ledges, /* flags */
+ 
+		_class_human_civilian, /* class */	
+		_class_human|_class_assimilated_civilian, /* friends */
+		(_class_hostile_alien^_class_assimilated_civilian)|_class_native, /* enemies */
+	
+		_normal_frequency, /* sound pitch */	
+		_snd_fusion_human_activation, _snd_fusion_kill_the_player, _snd_fusion_human_clear, _snd_fusion_human_trash_talk, _snd_fusion_human_apology, _snd_fusion_human_stop_shooting_me_you_bastard, /* sounds: activation, friendly activation, clear, kill, apology, friendly-fire */
+		_snd_fusion_human_wail, /* dying flaming */
+		_snd_fusion_human_chatter, 0x1f, /* random sound, random sound mask */
+
+		_i_plasma_magazine, /* carrying item type */
+	
+		WORLD_ONE/5, (4*WORLD_ONE)/5, /* radius, height */
+		0, /* preferred hover height */
+		-2*WORLD_ONE, WORLD_ONE/3, /* minimum ledge delta, maximum ledge delta */
+		FIXED_ONE, /* external velocity scale */
+		_effect_vacuum_civilian_blood_splash, NONE, NONE, /* impact effect, melee impact effect, contrail effect */
+	
+		QUARTER_CIRCLE, QUARTER_CIRCLE/3, /* half visual arc, half vertical visual arc */
+		30*WORLD_ONE, WORLD_ONE, /* visual range, dark visual range */
+		_intelligence_high, /* intelligence */
+		_speed_blinding, /* speed */
+		NORMAL_MONSTER_GRAVITY, NORMAL_MONSTER_TERMINAL_VELOCITY, /* gravity, terminal velocity */
+		_vidmaster_door_retry_mask, /* door retry mask */
+		NONE, {NONE, 0, 0, 0}, /* shrapnel radius, shrapnel damage */
+		
+		10, /* being hit */
+		2, 1, /* dying hard (popping), dying soft (falling) */
+		4, 3, /* hard dead frames, soft dead frames */
+		6, 0, /* stationary shape, moving shape */
+		9, 8, /* teleport in shape, teleport out shape */
+		
+		3*TICKS_PER_SECOND, /* attack frequency (for both melee and ranged attacks) */
+		
+		/* melee attack */
+		{
+			NONE, /* melee attack type */
+		},
+		
+		/* ranged attack */
+		{
+			_projectile_fusion_bolt_minor, /* ranged attack type */
+			2, /* repetitions */
+			NUMBER_OF_ANGLES/150, /* error angle */
+			13*WORLD_ONE, /* range */
+			5, /* ranged attack shape */
+			
+			0, 0, WORLD_ONE*3/4, /* dx, dy, dz */
+		}
+	},
+
+	{ /* _civilian_security "steve" */
+		BUILD_COLLECTION(_collection_vacuum_civilian, 2), /* shape collection */
+		30, 0, 0, /* vitality, immunities, weaknesses */
+		_monster_attacks_immediately|_monster_is_omniscent|_monster_cannot_be_dropped|_monster_waits_with_clear_shot|_monster_can_die_in_flames|_monster_uses_sniper_ledges, /* flags */
+
+		_class_human_civilian, /* class */	
+		_class_human|_class_assimilated_civilian, /* friends */
+		(_class_hostile_alien^_class_assimilated_civilian)|_class_native, /* enemies */
+	
+		_normal_frequency, /* sound pitch */	
+		_snd_fusion_human_activation, _snd_fusion_kill_the_player, _snd_fusion_human_clear, _snd_fusion_human_trash_talk, _snd_fusion_human_apology, _snd_fusion_human_stop_shooting_me_you_bastard, /* sounds: activation, friendly activation, clear, kill, apology, friendly-fire */
+		_snd_fusion_human_wail, /* dying flaming */
+		_snd_fusion_human_chatter, 0x1f, /* random sound, random sound mask */
+
+		_i_plasma_pistol, /* carrying item type */
+	
+		WORLD_ONE/5, (4*WORLD_ONE)/5, /* radius, height */
+		0, /* preferred hover height */
+		-2*WORLD_ONE, WORLD_ONE/3, /* minimum ledge delta, maximum ledge delta */
+		FIXED_ONE, /* external velocity scale */
+		_effect_vacuum_civilian_blood_splash, NONE, NONE, /* impact effect, melee impact effect, contrail effect */
+	
+		QUARTER_CIRCLE, QUARTER_CIRCLE/3, /* half visual arc, half vertical visual arc */
+		30*WORLD_ONE, WORLD_ONE, /* visual range, dark visual range */
+		_intelligence_high, /* intelligence */
+		_speed_blinding, /* speed */
+		NORMAL_MONSTER_GRAVITY, NORMAL_MONSTER_TERMINAL_VELOCITY, /* gravity, terminal velocity */
+		_vidmaster_door_retry_mask, /* door retry mask */
+		NONE, {NONE, 0, 0, 0}, /* shrapnel radius, shrapnel damage */
+		
+		10, /* being hit */
+		2, 1, /* dying hard (popping), dying soft (falling) */
+		4, 3, /* hard dead frames, soft dead frames */
+		6, 0, /* stationary shape, moving shape */
+		9, 8, /* teleport in shape, teleport out shape */
+		
+		TICKS_PER_SECOND, /* attack frequency (for both melee and ranged attacks) */
+		
+		/* melee attack */
+		{
+			NONE, /* melee attack type */
+		},
+		
+		/* ranged attack */
+		{
+			_projectile_fusion_bolt_minor, /* ranged attack type */
+			5, /* repetitions */
+			NUMBER_OF_ANGLES/150, /* error angle */
+			17*WORLD_ONE, /* range */
+			5, /* ranged attack shape */
+			
+			0, 0, WORLD_ONE*3/4, /* dx, dy, dz */
+		}
+	},
+
+	{ /* _civilian_assimilated "evil bob" */
+		BUILD_COLLECTION(_collection_vacuum_civilian, 3), /* shape collection */
+		30, 0, 0, /* vitality, immunities, weaknesses */
+		_monster_is_alien|_monster_is_kamakazi|_monster_can_die_in_flames, /* flags */
+		
+		_class_assimilated_civilian,
+		_class_pfhor, /* friends */
+		_class_player|_class_defender, /* enemies */
+	
+		_normal_frequency, /* sound pitch */	
+		NONE, NONE, NONE, NONE, NONE, _snd_fusion_human_stop_shooting_me_you_bastard, /* sounds: activation, friendly activation, clear, kill, apology, friendly-fire */
+		_snd_fusion_human_wail, /* dying flaming */
+		_snd_assimilated_fusion_human_chatter, 0xf, /* random sound, random sound mask */
+
+		NONE, /* carrying item type */
+	
+		WORLD_ONE/5, (4*WORLD_ONE)/5, /* radius, height */
+		0, /* preferred hover height */
+		-2*WORLD_ONE, WORLD_ONE/3, /* minimum ledge delta, maximum ledge delta */
+		FIXED_ONE, /* external velocity scale */
+		_effect_assimilated_vacuum_civilian_blood_splash, NONE, NONE, /* impact effect, melee impact effect, contrail effect */
+	
+		QUARTER_CIRCLE, QUARTER_CIRCLE/3, /* half visual arc, half vertical visual arc */
+		15*WORLD_ONE, WORLD_ONE, /* visual range, dark visual range */
+		_intelligence_high, /* intelligence */
+		_speed_blinding, /* speed */
+		NORMAL_MONSTER_GRAVITY, NORMAL_MONSTER_TERMINAL_VELOCITY, /* gravity, terminal velocity */
+		_vidmaster_door_retry_mask, /* door retry mask */
+		WORLD_ONE, {_damage_explosion, _alien_damage, 80, 40, FIXED_ONE}, /* shrapnel radius, shrapnel damage  */
+		
+		10, /* being hit */
+		11, NONE, /* dying hard (popping), dying soft (falling) */
+		4, 0, /* hard dead frames, soft dead frames */
+		6, 0, /* stationary shape, moving shape */
+		8, NONE, /* teleport in shape, teleport out shape */
+		
+		2*TICKS_PER_SECOND, /* attack frequency (for both melee and ranged attacks) */
+		
+		/* melee attack */
+		{
+			NONE, /* melee attack type */
+		},
+		
+		/* ranged attack */
+		{
+			NONE, /* ranged attack type */
+		}
+	},
 };
+#endif

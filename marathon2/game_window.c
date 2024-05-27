@@ -29,7 +29,7 @@ Tuesday, August 29, 1995 4:02:15 PM
 #include "player.h"
 #include "screen_drawing.h"
 #include "motion_sensor.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "items.h"
 #include "weapons.h"
 #include "game_window.h"
@@ -120,6 +120,10 @@ enum {
 	_network_compass_shape_se,
 
 	_skull,
+	
+	_smg,
+	_smg_bullet,
+	_smg_casing,
 	
 	/* These are NOT done. */
 	_mike_button_unpressed,
@@ -309,7 +313,22 @@ struct weapon_interface_data weapon_interface_definitions[]=
 			{ _unused_interface_data, 451, 411, 2, 1, 12, 16, BUILD_DESCRIPTOR(_collection_interface, _shotgun_bullet), BUILD_DESCRIPTOR(_collection_interface, _shotgun_casing), TRUE},
 			{ _unused_interface_data, 483, 411, 2, 1, 12, 16, BUILD_DESCRIPTOR(_collection_interface, _shotgun_bullet), BUILD_DESCRIPTOR(_collection_interface, _shotgun_casing), TRUE}
 		}
-	}
+	},
+	
+	/* Arnold, the smg */	
+	{
+		_i_smg,
+		BUILD_DESCRIPTOR(_collection_interface, _smg),
+		430, 452,
+		439, NONE, //••
+		366, 460, 
+		FALSE,
+		{
+			{ _uses_bullets, 405, 382, 8, 4, 5, 10, BUILD_DESCRIPTOR(_collection_interface, _smg_bullet), BUILD_DESCRIPTOR(_collection_interface, _smg_casing), TRUE},
+			{ _unused_interface_data, 390, 413, 7, 1, 8, 12, BUILD_DESCRIPTOR(_collection_interface, _assault_rifle_grenade), BUILD_DESCRIPTOR(_collection_interface, _assault_rifle_grenade_casing), TRUE},
+		}
+	},
+
 };
 
 /* --------- private prototypes */
@@ -465,7 +484,7 @@ void mark_player_network_stats_as_dirty(
 void set_interface_microphone_recording_state(
 	boolean state)
 {
-#pragma unused (state);
+#pragma unused (state)
 #ifdef OBSOLETE
 	const short sounds[]={MICROPHONE_STOP_CLICK_SOUND, MICROPHONE_START_CLICK_SOUND};
 	const short shapes[]={_mike_button_unpressed, _mike_button_pressed};
@@ -552,10 +571,10 @@ void update_everything(
 	update_suit_oxygen(time_elapsed);
 
 	/* Handle the network microphone.. */
-//		handle_microphone(local_player_index==dynamic_world->speaking_player_index);
+	handle_microphone(local_player_index==dynamic_world->speaking_player_index);
 
 	/* Draw the message area if the player count is greater than one. */
-	if(dynamic_world->player_count>1)
+	if (dynamic_world->player_count>1)
 	{
 		draw_message_area(time_elapsed);
 	}
@@ -834,16 +853,34 @@ static void update_inventory_panel(
 			calculate_player_item_array(current_player_index, item_type,
 				section_items, section_counts, &section_count);
 		}
-				
+
 		/* Draw the header. */
 		get_header_name(temporary, item_type);
 		draw_inventory_header(temporary, current_row++);
-	
+
+		/* Draw the network time elapsed if timed game. */
+		if (item_type==_network_statistics && dynamic_world->game_information.game_time_remaining<60*60*TICKS_PER_SECOND)
+		{
+			long seconds= dynamic_world->game_information.game_time_remaining/TICKS_PER_SECOND;
+			screen_rectangle destination;
+			
+			sprintf(temporary, "% 2d:%02d", seconds/60, seconds%60);
+
+			calculate_inventory_rectangle_from_offset(&destination, current_row-1);
+			destination.top -= 2;		//<6/17/96 AMR> Sick hack
+			destination.bottom -= 2;
+
+			/* Now draw the text. */	
+			destination.left+= TEXT_INSET;
+			_draw_screen_text(temporary, &destination, _right_justified, _interface_font,
+				_inventory_text_color);
+		}
+				
 		/* Erase the panel.. */
 		text_rectangle= *destination;
 		text_rectangle.top+= _get_font_line_height(_interface_font);
 		_fill_rect(&text_rectangle, _inventory_background_color);
-				
+
 		if(item_type==_network_statistics)
 		{
 			struct player_ranking_data rankings[MAXIMUM_NUMBER_OF_PLAYERS];
@@ -888,6 +925,8 @@ static void update_inventory_panel(
 		
 		SET_INVENTORY_DIRTY_STATE(current_player, FALSE);
 	}
+
+	return;
 }
 
 /* Draw the text in the rectangle, starting at the given offset, on the */
@@ -907,6 +946,8 @@ static void draw_inventory_header(
 	destination.left+= TEXT_INSET;
 	_draw_screen_text(text, &destination, _center_vertical, _interface_font,
 		_inventory_text_color);
+		
+	return;
 }
 
 static void calculate_inventory_rectangle_from_offset(

@@ -99,7 +99,7 @@ struct sound_definition /* 64 bytes */
 	
 	unsigned long last_played; // machine ticks
 	
-	long handle; // (machine-specific pointer type) zero if not loaded
+	long hndl; // (machine-specific pointer type) zero if not loaded
 	
 	short unused[2];
 };
@@ -169,6 +169,7 @@ static struct ambient_sound_definition ambient_sound_definitions[NUMBER_OF_AMBIE
 	{_snd_pfhor_platform},
 	{_snd_alien_noise1},
 	{_snd_alien_noise2},
+	{_snd_jjaro_noise}
 };
 
 /* ---------- random sound definition structures */
@@ -179,6 +180,7 @@ static struct random_sound_definition random_sound_definitions[NUMBER_OF_RANDOM_
 	{_snd_surface_explosion},
 	{_snd_underground_explosion},
 	{_snd_owl},
+	{_snd_jjaro_creak}
 };
 
 /* ---------- sound definition structures */
@@ -200,7 +202,7 @@ static struct sound_definition sound_definitions[NUMBER_OF_SOUND_DEFINITIONS]=
 	{10000, _sound_is_normal}, // _snd_teleport_in
 	{10010, _sound_is_normal}, // _snd_teleport_out
 	{10020, _sound_is_loud, _sound_cannot_change_pitch}, // _snd_body_being_crunched
-	{NONE, _sound_is_normal}, // _snd_nuclear_hard_death
+	{14260, _sound_is_normal}, // _snd_jjaro_creak
 	{10030, _sound_is_normal}, // _snd_absorbed
 
 	{NONE, _sound_is_normal}, // _snd_breathing
@@ -234,8 +236,8 @@ static struct sound_definition sound_definitions[NUMBER_OF_SOUND_DEFINITIONS]=
 	{12040, _sound_is_normal}, // _snd_spht_platform_stopping,
 
 	{14540, _sound_is_normal}, // _snd_owl
-	{NONE, _sound_is_normal}, //
-	{NONE, _sound_is_normal}, //
+	{18000, _sound_is_normal}, // _snd_smg_firing
+	{18010, _sound_is_normal}, // _snd_smg_reloading
 	
 	{12080, _sound_is_normal}, // _snd_pfhor_platform_starting,
 	{12090, _sound_is_normal}, // _snd_pfhor_platform_stopping,
@@ -330,7 +332,7 @@ static struct sound_definition sound_definitions[NUMBER_OF_SOUND_DEFINITIONS]=
 	{14080, _sound_is_normal, _sound_is_ambient}, // _snd_fan,
 	{14090, _sound_is_normal, _sound_is_ambient}, // _snd_spht_door
 	{14100, _sound_is_normal, _sound_is_ambient}, // _snd_spht_platform
-	{14120, _sound_is_normal, _sound_is_ambient}, // _snd_unused4
+	{14120, _sound_is_normal, _sound_is_ambient}, // _snd_jjaro_noise
 	{14130, _sound_is_normal, _sound_is_ambient}, // _snd_heavy_spht_platform
 	{14140, _sound_is_normal, _sound_is_ambient}, // _snd_light_machinery
 	{14150, _sound_is_normal, _sound_is_ambient}, // _snd_heavy_machinery
@@ -462,5 +464,18 @@ static struct sound_definition sound_definitions[NUMBER_OF_SOUND_DEFINITIONS]=
 
 	{14240, _sound_is_normal, _sound_is_ambient}, // _snd_alien_noise1
 	{14250, _sound_is_normal, _sound_is_ambient}, // _snd_alien_noise2
+
+	{18100, _sound_is_loud}, // _snd_fusion_human_wail
+	{18110, _sound_is_normal}, // _snd_fusion_human_scream
+	{18120, _sound_is_normal}, // _snd_fusion_human_hit
+	{18130, _sound_is_normal, _sound_cannot_be_restarted}, // _snd_fusion_human_chatter "they’re everywhere!"
+	{18140, _sound_is_normal, _sound_cannot_be_restarted}, // _snd_assimilated_fusion_human_chatter "thank god it’s you!"
+	{18150, _sound_is_normal, _sound_cannot_be_restarted, _seventy_percent}, // _snd_fusion_human_trash_talk "eat that!"
+	{18160, _sound_is_normal, _sound_cannot_be_restarted}, // _snd_fusion_human_apology "oops!"
+	{18170, _sound_is_normal, _sound_cannot_be_restarted}, // _snd_fusion_human_activation "they’re over here!"
+	{18180, _sound_is_normal, _sound_cannot_be_restarted, _fifty_percent}, // _snd_fusion_human_clear "out of the way!"
+	{18190, _sound_is_normal, _sound_cannot_be_restarted, _thirty_percent}, // _snd_fusion_human_stop_shooting_me_you_bastard
+	{18200, _sound_is_normal, _sound_cannot_be_restarted, _fifty_percent}, // _snd_fusion_human_area_secure
+	{18210, _sound_is_normal, _sound_cannot_be_restarted}, // _snd_fusion_kill_the_player
 };
 #endif

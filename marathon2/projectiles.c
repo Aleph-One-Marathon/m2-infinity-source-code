@@ -29,7 +29,7 @@ Friday, October 6, 1995 8:35:04 AM  (Jason)
 #include "player.h"
 #include "scenery.h"
 #include "media.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "items.h"
 
 /*
@@ -279,6 +279,7 @@ void move_projectiles(
 				else
 				{
 					world_distance speed= definition->speed;
+					unsigned long adjusted_definition_flags= 0;
 					word flags;
 					
 					/* base alien projectile speed on difficulty level */
@@ -296,6 +297,8 @@ void move_projectiles(
 					/* if this is a guided projectile with a valid target, update guidance system */				
 					if ((definition->flags&_guided) && projectile->target_index!=NONE && (dynamic_world->tick_count&1)) update_guided_projectile(projectile_index);
 					
+					if (PROJECTILE_HAS_CROSSED_MEDIA_BOUNDARY(projectile)) adjusted_definition_flags= _penetrates_media;
+					
 					/* move the projectile and check for collisions; if we didn’t detonate move the
 						projectile and check to see if we need to leave a contrail */
 					if ((definition->flags&_affected_by_half_gravity) && (dynamic_world->tick_count&1)) projectile->gravity-= GRAVITATIONAL_ACCELERATION;
@@ -305,7 +308,9 @@ void move_projectiles(
 					translate_point3d(&new_location, speed, object->facing, projectile->elevation);
 					if (definition->flags&_vertical_wander) new_location.z+= (random()&1) ? WANDER_MAGNITUDE : -WANDER_MAGNITUDE;
 					if (definition->flags&_horizontal_wander) translate_point3d(&new_location, (random()&1) ? WANDER_MAGNITUDE : -WANDER_MAGNITUDE, NORMALIZE_ANGLE(object->facing+QUARTER_CIRCLE), 0);
+					definition->flags^= adjusted_definition_flags;
 					flags= translate_projectile(projectile->type, &old_location, object->polygon, &new_location, &new_polygon_index, projectile->owner_index, &obstruction_index);
+					definition->flags^= adjusted_definition_flags;
 					
 					if (flags&_projectile_hit)
 					{
@@ -344,7 +349,10 @@ void move_projectiles(
 									}
 									else
 									{
-										destroy_persistent_projectile= try_and_add_player_item(monster_obstruction_index, projectile->permutation);
+										if (MONSTER_IS_PLAYER(get_monster_data(monster_obstruction_index)))
+										{
+											destroy_persistent_projectile= try_and_add_player_item(monster_index_to_player_index(monster_obstruction_index), projectile->permutation);
+										}
 									}
 								}
 								else
@@ -385,13 +393,20 @@ void move_projectiles(
 								
 								if (detonation_effect!=NONE) new_effect(&new_location, new_polygon_index, detonation_effect, object->facing);
 								
-								if ((definition->flags&_persistent_and_virulent) && !destroy_persistent_projectile && monster_obstruction_index!=NONE)
+								if (!(definition->flags&_projectile_passes_media_boundary) || !(flags&_projectile_hit_media))
 								{
-									projectile->owner_index= monster_obstruction_index; /* keep going, but don’t hit this target again */
+									if ((definition->flags&_persistent_and_virulent) && !destroy_persistent_projectile && monster_obstruction_index!=NONE)
+									{
+										projectile->owner_index= monster_obstruction_index; /* keep going, but don’t hit this target again */
+									}
+									else
+									{
+										remove_projectile(projectile_index);
+									}
 								}
 								else
 								{
-									remove_projectile(projectile_index);
+									SET_PROJECTILE_CROSSED_MEDIA_BOUNDARY_STATUS(projectile, TRUE);
 								}
 							}
 						}

@@ -755,7 +755,8 @@ boolean NetStart(
 	
 	if (topology->player_count > 2)
 	{
-		qsort(topology->players+1, topology->player_count-1, sizeof(struct NetPlayer), net_compare);
+		qsort(topology->players+1, topology->player_count-1, sizeof(struct NetPlayer),
+			(int (*)(const void *, const void *)) net_compare);
 	}
 
 	NetUpdateTopology();
@@ -1366,7 +1367,7 @@ static void NetProcessLossyDistribution(
 	NetPacketHeaderPtr        header;
 	NetDistributionPacketPtr  packet_data;
 	
-	packet_data = buffer;
+	packet_data = (NetDistributionPacketPtr)buffer;
 	type = packet_data->distribution_type;
 
 	if (distribution_info[type].type_in_use)
@@ -1526,7 +1527,7 @@ static void NetProcessIncomingBuffer(
 	{
 		case typeSYNC_RING_PACKET:
 		case typeTIME_RING_PACKET:
-			NetBuildRingPacket(ringFrame, buffer, NetPacketSize((NetPacketPtr) buffer), status->lastValidRingSequence+1);
+			NetBuildRingPacket(ringFrame, (byte *)buffer, NetPacketSize((NetPacketPtr) buffer), status->lastValidRingSequence+1);
 			/* We acknowledge just before sending the ring frame.... */
 			NetSendAcknowledgement(ackFrame, status->lastValidRingSequence);
 			NetSendRingPacket(ringFrame);
@@ -1537,7 +1538,7 @@ static void NetProcessIncomingBuffer(
 			/*  time out. (important if one machine is slower than the others. */
 			if(netState==netComingDown)
 			{
-				NetBuildRingPacket(ringFrame, buffer, NetPacketSize((NetPacketPtr) buffer), status->lastValidRingSequence+1);
+				NetBuildRingPacket(ringFrame, (byte *)buffer, NetPacketSize((NetPacketPtr) buffer), status->lastValidRingSequence+1);
 
 				NetSendAcknowledgement(ackFrame, status->lastValidRingSequence);
 				NetSendRingPacket(ringFrame);
@@ -2108,7 +2109,7 @@ static void drop_upring_player(
 {
 	short flag_count, index, oldNextPlayerIndex;
 	long *action_flags;
-	NetPacketPtr packet_data= ringFrame->data + sizeof(NetPacketHeader);
+	NetPacketPtr packet_data= (NetPacketPtr) (ringFrame->data + sizeof(NetPacketHeader));
 
 	/* Reset the retries for the new packet. */
 	status->retries= 0;
@@ -2216,7 +2217,7 @@ boolean NetChangeMap(
 		// being the server, we must send out the map to everyone.	
 		if(localPlayerIndex==status->server_player_index) 
 		{
-			wad= get_map_for_net_transfer(entry);
+			wad= (byte *)get_map_for_net_transfer(entry);
 			if(wad)
 			{
 				length= get_net_map_data_length(wad);
@@ -2269,7 +2270,7 @@ static OSErr NetDistributeGameDataToAllPlayers(
 	length_written= 0l;
 
 	/* Get the physics crap. */
-	physics_buffer= get_network_physics_buffer(&physics_length);
+	physics_buffer= (byte *)get_network_physics_buffer(&physics_length);
 
 	// go ahead and transfer the map to each player
 	for (playerIndex= 1; !error && playerIndex<topology->player_count; playerIndex++)
@@ -2354,7 +2355,7 @@ static byte *NetReceiveGameData(
 		set_progress_dialog_message(_receiving_physics);
 
 #ifdef NO_PHYSICS
-		physics_buffer= receive_stream_data(&physics_length, &error);
+		physics_buffer= (byte *)receive_stream_data(&physics_length, &error);
 #else
 		physics_buffer= NULL;
 #endif
@@ -2367,7 +2368,7 @@ static byte *NetReceiveGameData(
 			/* receiving the map.. */
 			set_progress_dialog_message(_receiving_map);
 			reset_progress_bar(); /* Reset the progress bar */
-			map_buffer= receive_stream_data(&map_length, &error);
+			map_buffer= (byte *)receive_stream_data(&map_length, &error);
 		}
 
 		// close everything up.

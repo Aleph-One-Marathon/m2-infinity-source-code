@@ -19,7 +19,7 @@ Sunday, August 14, 1994 1:20:55 AM
 
 /* ---------- constants */
 
-#define MAXIMUM_DOUBLE_BUFFER_SIZE 1024
+#define MAXIMUM_DOUBLE_BUFFER_SIZE (2*NETWORK_SOUND_CHUNK_BUFFER_SIZE)
 #define MAXIMUM_QUEUE_SIZE (3*MAXIMUM_DOUBLE_BUFFER_SIZE)
 
 enum /* speaker states */
@@ -52,6 +52,10 @@ struct speaker_definition
 
 static struct speaker_definition *speaker= (struct speaker_definition *) NULL;
 static SndDoubleBackUPP doubleback_routine_descriptor;
+
+#ifdef DEBUG
+static int queue_being_emptied= 0;
+#endif
 
 /* ---------- private code */
 
@@ -116,7 +120,8 @@ OSErr open_network_speaker(
 				speaker->channel->userInfo= (long) get_a5();
 #endif
 				
-				error= SndNewChannel(&speaker->channel, sampledSynth, initMono|initMACE6, (SndCallBackProcPtr) NULL);
+				error= SndNewChannel(&speaker->channel, sampledSynth, initMono|initMACE6,
+					NULL);
 				if (error==noErr)
 				{
 					quiet_network_speaker(); /* to set defaults */
@@ -187,18 +192,24 @@ void queue_network_speaker_data(
 		{
 			if (buffer)
 			{
-				BlockMove(buffer, speaker->queue+speaker->queue_size, count);
+				BlockMoveData(buffer, speaker->queue+speaker->queue_size, count);
 			}
 			else
 			{
-				fill_buffer_with_static(speaker->queue+speaker->queue_size, count);
+				fill_buffer_with_static((unsigned char *)speaker->queue+speaker->queue_size, count);
 			}
 			
 			speaker->queue_size+= count;
 		}
 		else
 		{
+		// <AMR 8/1/96> Turned this off for gamma builds because it happens at interrupt time
+#ifndef GAMMA
+#ifdef DEBUG
+			dprintf("queue was emptied #%d times before failure.", queue_being_emptied);
+#endif
 			vpause(csprintf(temporary, "queue_net_speaker_data() is ignoring data: #%d+#%d>#%d", speaker->queue_size, count, MAXIMUM_QUEUE_SIZE));
+#endif
 		}
 	
 #ifdef SNDPLAYDOUBLEBUFFER_DOESNT_SUCK
@@ -340,10 +351,14 @@ void fill_network_speaker_buffer(
 	}
 
 	/* for better or for worse, fill the waiting buffer */
-	if (available_bytes) BlockMove(speaker->queue, doubleBufferPtr->dbSoundData, available_bytes);
-	if (missing_bytes) fill_buffer_with_static(doubleBufferPtr->dbSoundData+available_bytes, missing_bytes);
-	if (extra_bytes) BlockMove(speaker->queue+speaker->block_size, speaker->queue, extra_bytes);
+	if (available_bytes) BlockMoveData(speaker->queue, doubleBufferPtr->dbSoundData, available_bytes);
+	if (missing_bytes) fill_buffer_with_static((unsigned char *)doubleBufferPtr->dbSoundData+available_bytes, missing_bytes);
+	if (extra_bytes) BlockMoveData(speaker->queue+speaker->block_size, speaker->queue, extra_bytes);
 	speaker->queue_size-= available_bytes;
+
+#ifdef DEBUG
+	queue_being_emptied++;
+#endif
 
 	switch (speaker->state)
 	{

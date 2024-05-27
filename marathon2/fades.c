@@ -22,6 +22,7 @@ Monday, October 30, 1995 8:02:12 PM  (Jason)
 #include "cseries.h"
 #include "fades.h"
 #include "screen.h"
+#include "textures.h"
 
 #include <string.h>
 #include <math.h>
@@ -32,9 +33,13 @@ Monday, October 30, 1995 8:02:12 PM  (Jason)
 
 /* ---------- constants */
 
-#define ADJUSTED_TRANSPARENCY_DOWNSHIFT 8
+enum
+{
+	ADJUSTED_TRANSPARENCY_DOWNSHIFT= 8,
 
-#define MINIMUM_FADE_RESTART (MACHINE_TICKS_PER_SECOND/2)
+	MINIMUM_FADE_RESTART_TICKS= MACHINE_TICKS_PER_SECOND/2,
+	MINIMUM_FADE_UPDATE_TICKS= MACHINE_TICKS_PER_SECOND/8
+};
 
 /* ---------- macros */
 
@@ -81,6 +86,7 @@ struct fade_data
 	short type;
 	short fade_effect_type;
 	
+	long start_tick;
 	long last_update_tick;
 	
 	struct color_table *original_color_table;
@@ -111,24 +117,24 @@ static struct fade_definition fade_definitions[NUMBER_OF_FADE_TYPES]=
 	{tint_color_table, {0, 0, 0}, 0, 0, 0, _full_screen_flag, 0}, /* _end_cinematic_fade_out */
 	
 	{tint_color_table, {65535, 0, 0}, (3*FIXED_ONE)/4, 0, MACHINE_TICKS_PER_SECOND/4, 0, 0}, /* _fade_red */
-	{tint_color_table, {65535, 0, 0}, FIXED_ONE, 0, (3*MACHINE_TICKS_PER_SECOND)/4, 0, 0}, /* _fade_big_red */
+	{tint_color_table, {65535, 0, 0}, FIXED_ONE, 0, (3*MACHINE_TICKS_PER_SECOND)/4, 0, 25}, /* _fade_big_red */
 	{tint_color_table, {0, 65535, 0}, FIXED_ONE_HALF, 0, MACHINE_TICKS_PER_SECOND/4, 0, 0}, /* _fade_bonus */
 	{tint_color_table, {65535, 65535, 50000}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND/3, 0, 0}, /* _fade_bright */
-	{tint_color_table, {65535, 65535, 50000}, FIXED_ONE, 0, 4*MACHINE_TICKS_PER_SECOND, 0, 1}, /* _fade_long_bright */
-	{tint_color_table, {65535, 65535, 0}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND/2, 0, 0}, /* _fade_yellow */
-	{tint_color_table, {65535, 65535, 0}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND, 0, 0}, /* _fade_big_yellow */
+	{tint_color_table, {65535, 65535, 50000}, FIXED_ONE, 0, 4*MACHINE_TICKS_PER_SECOND, 0, 100}, /* _fade_long_bright */
+	{tint_color_table, {65535, 65535, 0}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND/2, 0, 50}, /* _fade_yellow */
+	{tint_color_table, {65535, 65535, 0}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND, 0, 75}, /* _fade_big_yellow */
 	{tint_color_table, {215*256, 107*256, 65535}, (3*FIXED_ONE)/4, 0, MACHINE_TICKS_PER_SECOND/4, 0, 0}, /* _fade_purple */
 	{tint_color_table, {169*256, 65535, 224*256}, (3*FIXED_ONE)/4, 0, MACHINE_TICKS_PER_SECOND/2, 0, 0}, /* _fade_cyan */
 	{tint_color_table, {65535, 65535, 65535}, FIXED_ONE_HALF, 0, MACHINE_TICKS_PER_SECOND/4, 0, 0}, /* _fade_white */
-	{tint_color_table, {65535, 65535, 65535}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND/2, 0, 0}, /* _fade_big_white */
+	{tint_color_table, {65535, 65535, 65535}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND/2, 0, 25}, /* _fade_big_white */
 	{tint_color_table, {65535, 32768, 0}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND/4, 0, 0}, /* _fade_orange */
-	{tint_color_table, {65535, 32768, 0}, FIXED_ONE/4, 0, 3*MACHINE_TICKS_PER_SECOND, 0, 0}, /* _fade_long_orange */
+	{tint_color_table, {65535, 32768, 0}, FIXED_ONE/4, 0, 3*MACHINE_TICKS_PER_SECOND, 0, 25}, /* _fade_long_orange */
 	{tint_color_table, {0, 65535, 0}, 3*FIXED_ONE/4, 0, MACHINE_TICKS_PER_SECOND/2, 0, 0}, /* _fade_green */
-	{tint_color_table, {65535, 0, 65535}, FIXED_ONE/4, 0, 3*MACHINE_TICKS_PER_SECOND, 0, 0}, /* _fade_long_green */
+	{tint_color_table, {65535, 0, 65535}, FIXED_ONE/4, 0, 3*MACHINE_TICKS_PER_SECOND, 0, 25}, /* _fade_long_green */
 
 	{randomize_color_table, {0, 0, 0}, FIXED_ONE, 0, (3*MACHINE_TICKS_PER_SECOND)/8, 0, 0}, /* _fade_static */
 	{negate_color_table, {65535, 65535, 65535}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND/2, 0, 0}, /* _fade_negative */
-	{negate_color_table, {65535, 65535, 65535}, FIXED_ONE, 0, (3*MACHINE_TICKS_PER_SECOND)/2, 0, 0}, /* _fade_big_negative */
+	{negate_color_table, {65535, 65535, 65535}, FIXED_ONE, 0, (3*MACHINE_TICKS_PER_SECOND)/2, 0, 25}, /* _fade_big_negative */
 	{negate_color_table, {0, 65535, 0}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND/2, _random_transparency_flag, 0}, /* _fade_flicker_negative */
 	{dodge_color_table, {0, 65535, 0}, FIXED_ONE, 0, (3*MACHINE_TICKS_PER_SECOND)/4, 0, 0}, /* _fade_dodge_purple */
 	{burn_color_table, {0, 65535, 65535}, FIXED_ONE, 0, MACHINE_TICKS_PER_SECOND, 0, 0}, /* _fade_burn_cyan */
@@ -163,7 +169,7 @@ static float actual_gamma_values[NUMBER_OF_GAMMA_LEVELS]=
 
 /* ---------- private prototypes */
 
-struct fade_definition *get_fade_definition(short index);
+static struct fade_definition *get_fade_definition(short index);
 static struct fade_effect_definition *get_fade_effect_definition(short index);
 
 static void recalculate_and_display_color_table(short type, fixed transparency,
@@ -190,21 +196,30 @@ boolean update_fades(
 	if (FADE_IS_ACTIVE(fade))
 	{
 		struct fade_definition *definition= get_fade_definition(fade->type);
+		long tick_count= machine_tick_count();
+		boolean update= FALSE;
 		fixed transparency;
 		short phase;
 		
-		if ((phase= machine_tick_count()-fade->last_update_tick)>=definition->period)
+		if ((phase= tick_count-fade->start_tick)>=definition->period)
 		{
 			transparency= definition->final_transparency;
 			SET_FADE_ACTIVE_STATUS(fade, FALSE);
+			
+			update= TRUE;
 		}
 		else
 		{
-			transparency= definition->initial_transparency + (phase*(definition->final_transparency-definition->initial_transparency))/definition->period;
-			if (definition->flags&_random_transparency_flag) transparency+= FADES_RANDOM()%(definition->final_transparency-transparency);
+			if (tick_count-fade->last_update_tick>=MINIMUM_FADE_UPDATE_TICKS)
+			{
+				transparency= definition->initial_transparency + (phase*(definition->final_transparency-definition->initial_transparency))/definition->period;
+				if (definition->flags&_random_transparency_flag) transparency+= FADES_RANDOM()%(definition->final_transparency-transparency);
+				
+				update= TRUE;
+			}
 		}
 		
-		recalculate_and_display_color_table(fade->type, transparency, fade->original_color_table, fade->animated_color_table);
+		if (update) recalculate_and_display_color_table(fade->type, transparency, fade->original_color_table, fade->animated_color_table);
 	}
 	
 	return FADE_IS_ACTIVE(fade) ? TRUE : FALSE;
@@ -247,7 +262,7 @@ void explicit_start_fade(
 	struct color_table *animated_color_table)
 {
 	struct fade_definition *definition= get_fade_definition(type);
-	long machine_ticks= machine_tick_count();
+	long tick_count= machine_tick_count();
 	boolean do_fade= TRUE;
 
 	if (FADE_IS_ACTIVE(fade))
@@ -255,7 +270,7 @@ void explicit_start_fade(
 		struct fade_definition *old_definition= get_fade_definition(fade->type);
 		
 		if (old_definition->priority>definition->priority) do_fade= FALSE;
-		if (fade->type==type && machine_ticks-fade->last_update_tick<MINIMUM_FADE_RESTART) do_fade= FALSE;
+		if (tick_count-fade->start_tick<MINIMUM_FADE_RESTART_TICKS && fade->type==type) do_fade= FALSE;
 	}
 
 	if (do_fade)
@@ -266,7 +281,7 @@ void explicit_start_fade(
 		if (definition->period)
 		{
 			fade->type= type;
-			fade->last_update_tick= machine_ticks;
+			fade->start_tick= fade->last_update_tick= tick_count;
 			fade->original_color_table= original_color_table;
 			fade->animated_color_table= animated_color_table;
 			SET_FADE_ACTIVE_STATUS(fade, TRUE);
@@ -306,9 +321,11 @@ void full_fade(
 	
 	memcpy(&animated_color_table, original_color_table, sizeof(struct color_table));
 	
+#if !DRAW_SPROCKET_SUPPORT
 	explicit_start_fade(type, original_color_table, &animated_color_table);
-	while (update_fades());
-
+	while (update_fades())
+		; /* empty loop body */
+#endif
 	return;
 }
 
@@ -432,7 +449,8 @@ static void randomize_color_table(
 
 	/* calculate a mask which has all bits including and lower than the high-bit in the
 		transparency set */
-	for (mask= 0;~mask & adjusted_transparency;mask= (mask<<1)|1);
+	for (mask= 0;~mask & adjusted_transparency;mask= (mask<<1)|1)
+		; /* empty loop body */
 	
 	animated_color_table->color_count= original_color_table->color_count;
 	for (i= 0; i<original_color_table->color_count; ++i, ++adjusted, ++unadjusted)

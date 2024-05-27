@@ -124,23 +124,28 @@ OSErr NetDDPOpenSocket(
 	{
 		if (packet_handler_upp == NULL)
 		{
-			packet_handler_upp = (UniversalProcPtr) NewRoutineDescriptor(packetHandler, 
+			packet_handler_upp = (UniversalProcPtr) NewRoutineDescriptor((ProcPtr) packetHandler, 
 				uppPacketHandlerProcInfo, GetCurrentISA());
 		}
 		assert(packet_handler_upp);
 		
 		if (initialize_upp == NULL)
 		{
-			initialize_upp = (UniversalProcPtr) NewRoutineDescriptor(initialize_socket_listener,
+			initialize_upp = (ProcPtr) NewRoutineDescriptor((ProcPtr) initialize_socket_listener,
 				uppInitializeListenerProcInfo, kM68kISA); // it's in a 68k code resource
 		}
 		assert(initialize_upp);		
 
 #ifdef env68k  // it seems that we don't have CallUniversalProc() in the library. strange...
+	#ifndef VULCAN
+		
 		socket_listener = (ProcPtr) initialize_socket_listener(packet_handler_upp, 
 			ddpPacketBuffer, 1);
+	#else
+		debugstr("Hey, socket listener was never initialized");
+	#endif
 #else	
-		socket_listener = (ProcPtr) CallUniversalProc(initialize_upp, uppInitializeListenerProcInfo,
+		socket_listener = (ProcPtr) CallUniversalProc((UniversalProcPtr) initialize_upp, uppInitializeListenerProcInfo,
 			packet_handler_upp, ddpPacketBuffer, 1);
 #endif
 		

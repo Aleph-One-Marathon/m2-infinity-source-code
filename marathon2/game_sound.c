@@ -1,5 +1,5 @@
 /*
-SOUND.C
+GAME_SOUND.C
 Friday, March 26, 1993 10:16:00 AM
 
 Friday, March 26, 1993 10:16:01 AM
@@ -62,7 +62,7 @@ Tuesday, August 29, 1995 8:56:16 AM  (Jason)
 */
 
 /*
-sound pitches do not work
+low-priority sounds (recharging, reloading, etc.) will not be played for certain periods of time
 
 there should be no difference between ambient and normal sound channels
 shortening radii on low-volume ambient sound sorces would be a good idea
@@ -72,13 +72,18 @@ shortening radii on low-volume ambient sound sorces would be a good idea
 
 #ifdef mac
 #include <GestaltEqu.h>
+
+#ifdef SUPPORT_SOUND_SPROCKET
+#include <SoundComponents.h>
+#include "SoundSprocket.h"
+#endif
 #endif
 
 #include "shell.h"
 
 #include "world.h"
 #include "interface.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "byte_swapping.h"
 
 #include <string.h>
@@ -124,10 +129,15 @@ enum /* channel flags */
 
 struct sound_variables
 {
-	short volume, left_volume, right_volume;
+#ifdef SUPPORT_SOUND_SPROCKET
+	TQ3CameraPlacement source;
+	Boolean useSprocketForSound;
+#endif // SUPPORT_SOUND_SPROCKET
 	fixed original_pitch, pitch;
-	
+	short left_volume, right_volume;
+	short volume;
 	short priority;
+
 };
 
 struct channel_data
@@ -146,6 +156,10 @@ struct channel_data
 #ifdef mac
 	SndChannelPtr channel;
 	short callback_count;
+#endif
+
+#ifdef SUPPORT_SOUND_SPROCKET
+	SSpSourceReference sspSource;
 #endif
 };
 
@@ -178,6 +192,8 @@ static struct sound_manager_parameters *_sm_parameters;
 
 /* include globals */
 #include "sound_definitions.h"
+
+static fixed pitch_modifier_override= 0;
 
 /* ---------- machine-specific prototypes */
 
@@ -219,10 +235,10 @@ static short distance_to_volume(struct sound_definition *definition, world_dista
 static void update_ambient_sound_sources(void);
 
 #ifdef DEBUG
-struct sound_definition *get_sound_definition(short sound_index);
-struct ambient_sound_definition *get_ambient_sound_definition(short ambient_sound_index);
-struct random_sound_definition *get_random_sound_definition(short random_sound_index);
-struct sound_behavior_definition *get_sound_behavior_definition(short sound_behavior_index);
+static struct sound_definition *get_sound_definition(short sound_index);
+static struct ambient_sound_definition *get_ambient_sound_definition(short ambient_sound_index);
+static struct random_sound_definition *get_random_sound_definition(short random_sound_index);
+static struct sound_behavior_definition *get_sound_behavior_definition(short sound_behavior_index);
 #else
 #define get_sound_definition(i) (_sm_globals->base_sound_definitions+(i))
 #define get_ambient_sound_definition(i) (ambient_sound_definitions+(i))
@@ -319,6 +335,23 @@ void direct_play_sound(
 	{
 		struct sound_variables variables;
 		struct channel_data *channel;
+		world_location3d *listener= _sound_listener_proc();
+		
+		variables.priority= 0;
+		variables.volume= volume;
+
+		if (direction==NONE || !listener)
+		{
+			variables.left_volume= variables.right_volume= volume;
+		}
+		else
+		{
+			angle_and_volume_to_stereo_volume(direction - listener->yaw,
+				volume, &variables.right_volume, &variables.left_volume);
+		}
+#ifdef SUPPORT_SOUND_SPROCKET
+		variables.useSprocketForSound = false;
+#endif
 
 		/* make sure the sound data is in memory */
 		if (_load_sound(sound_index))
@@ -326,21 +359,6 @@ void direct_play_sound(
 			/* get the channel, and free it for our new sound */
 			if (channel= best_channel(sound_index, &variables))
 			{
-				world_location3d *listener= _sound_listener_proc();
-				
-				variables.priority= 0;
-				variables.volume= volume;
-				
-				if (direction==NONE || !listener)
-				{
-					variables.left_volume= variables.right_volume= volume;
-				}
-				else
-				{
-					angle_and_volume_to_stereo_volume(direction - listener->yaw,
-						volume, &variables.right_volume, &variables.left_volume);
-				}
-		
 				/* set the volume and pitch in this channel */
 				instantiate_sound_variables(&variables, channel, TRUE);
 
@@ -635,6 +653,9 @@ static void track_stereo_sounds(
 				struct sound_variables variables= channel->variables;
 				
 				if (channel->dynamic_source) channel->source= *channel->dynamic_source;
+#ifdef SUPPORT_SOUND_SPROCKET				
+				variables.useSprocketForSound = true;
+#endif
 				calculate_sound_variables(channel->sound_index, &channel->source, &variables);
 				instantiate_sound_variables(&variables, channel, FALSE);
 			}
@@ -754,7 +775,7 @@ static short _release_least_useful_sound(
 
 	for (sound_index= 0, definition= _sm_globals->base_sound_definitions; sound_index<NUMBER_OF_SOUND_DEFINITIONS; ++sound_index, ++definition)
 	{
-		if (definition->handle && (!least_used_definition || least_used_definition->last_played>definition->last_played))
+		if (definition->hndl && (!least_used_definition || least_used_definition->last_played>definition->last_played))
 		{
 			least_used_sound_index= sound_index;
 			least_used_definition= definition;
@@ -801,21 +822,21 @@ boolean _load_sound(
 	if (definition->sound_code!=NONE &&
 		((_sm_parameters->flags&_ambient_sound_flag) || !(definition->flags&_sound_is_ambient)))
 	{
-		if (!definition->handle)
+		if (!definition->hndl)
 		{
-			definition->handle= read_sound_from_file(sound_index);
+			definition->hndl= read_sound_from_file(sound_index);
 			definition->last_played= machine_tick_count();
 			
 			while (_sm_globals->loaded_sounds_size>_sm_globals->total_buffer_size) _release_least_useful_sound();
 		}
 		
-		if (definition->handle)
+		if (definition->hndl)
 		{
 			definition->permutations_played= 0;
 		}
 	}
 	
-	return definition->handle ? TRUE : FALSE;
+	return definition->hndl ? TRUE : FALSE;
 }
 
 static void calculate_initial_sound_variables(
@@ -834,10 +855,30 @@ static void calculate_initial_sound_variables(
 		variables->volume= variables->left_volume= variables->right_volume= MAXIMUM_SOUND_VOLUME;
 	}
 
+#ifdef SUPPORT_SOUND_SPROCKET
+	if (source)
+		variables->useSprocketForSound = true;
+	else
+		variables->useSprocketForSound = false;
+#endif
+
 	/* and finally, do all the stuff we regularly do ... */
 	calculate_sound_variables(sound_index, source, variables);
 
 	return;
+}
+
+void toggle_sound_pitch_modifier_override(
+	boolean toggle)
+{
+	if (toggle)
+	{
+		pitch_modifier_override= (pitch_modifier_override ? 0 : (0x238E3));	// (FIXED_ONE / 0.45)
+	}
+	else
+	{
+		pitch_modifier_override= 0;
+	}
 }
 
 static fixed calculate_pitch_modifier(
@@ -850,12 +891,12 @@ static fixed calculate_pitch_modifier(
 	{
 		if (!(definition->flags&_sound_resists_pitch_changes))
 		{
-			pitch_modifier+= ((FIXED_ONE-pitch_modifier)>>1);
+			pitch_modifier+= (((pitch_modifier_override ? pitch_modifier_override : FIXED_ONE)-pitch_modifier)>>1);
 		}
 	}
 	else
 	{
-		pitch_modifier= FIXED_ONE;
+		pitch_modifier= (pitch_modifier_override ? pitch_modifier_override : FIXED_ONE);
 	}
 	
 	return pitch_modifier;
@@ -891,6 +932,14 @@ static void calculate_sound_variables(
 		{
 			variables->left_volume= variables->right_volume= variables->volume;
 		}
+		
+#ifdef SUPPORT_SOUND_SPROCKET
+		if (variables->useSprocketForSound)
+		{
+			CalcListenerInfo (listener);
+			ConvertMarathonCoordinatesToSoundSprocket (source, &variables->source);
+		}
+#endif
 	}
 
 	return;
@@ -1083,6 +1132,9 @@ static void update_ambient_sound_sources(
 			{
 				if (SLOT_IS_USED(channel) && channel->sound_index==ambient->sound_index)
 				{
+#ifdef SUPPORT_SOUND_SPROCKET
+					ambient->variables.useSprocketForSound = false;
+#endif
 					instantiate_sound_variables(&ambient->variables, channel, FALSE);
 					
 					sound_handled[i]= channel_used[j]= TRUE;
@@ -1114,7 +1166,9 @@ static void update_ambient_sound_sources(
 					MARK_SLOT_AS_USED(channel);
 					
 					channel_used[j]= TRUE;
-					
+#ifdef SUPPORT_SOUND_SPROCKET					
+					ambient->variables.useSprocketForSound = false;
+#endif
 					instantiate_sound_variables(&ambient->variables, channel, TRUE);
 
 					break;

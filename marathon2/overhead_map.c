@@ -175,7 +175,7 @@ void _render_overhead_map(
 							case _media_water: color= _polygon_water_color; break;
 							case _media_lava: color= _polygon_lava_color; break;
 							case _media_goo: color= _polygon_goo_color; break;
-							case _media_sewage: color= _polygon_sewage_color; break;
+							case _media_jjaro: case _media_sewage: color= _polygon_sewage_color; break;
 							default: halt(); break;
 						}
 					}
@@ -341,6 +341,10 @@ void _render_overhead_map(
 									case _civilian_science:
 									case _civilian_security:
 									case _civilian_assimilated:
+									case _vacuum_civilian_crew:
+									case _vacuum_civilian_science:
+									case _vacuum_civilian_security:
+									case _vacuum_civilian_assimilated:
 										thing_type= _civilian_thing;
 										break;
 									
@@ -376,9 +380,12 @@ void _render_overhead_map(
 							break;
 							
 						case _object_is_garbage:
-							if (GET_COLLECTION(GET_DESCRIPTOR_COLLECTION(object->shape))==_collection_civilian)
+							switch (GET_COLLECTION(GET_DESCRIPTOR_COLLECTION(object->shape)))
 							{
-								thing_type= _civilian_thing;
+								case _collection_civilian:
+								case _collection_vacuum_civilian:
+									thing_type= _civilian_thing;
+									break;
 							}
 							break;
 					}

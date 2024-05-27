@@ -1,5 +1,5 @@
 /*
-SOUND.H
+GAME_SOUND.H
 Friday, August 19, 1994 8:47:32 PM
 */
 
@@ -77,6 +77,7 @@ enum /* ambient sound codes */
 	_ambient_snd_pfhor_platform,
 	_ambient_snd_alien_noise1,
 	_ambient_snd_alien_noise2,
+	_ambient_snd_jjaro_noise,
 	
 	NUMBER_OF_AMBIENT_SOUND_DEFINITIONS
 };
@@ -87,6 +88,7 @@ enum /* random sound codes */
 	_random_snd_surface_explosion,
 	_random_snd_underground_explosion,
 	_random_snd_owl,
+	_random_snd_jjaro_creak,
 
 	NUMBER_OF_RANDOM_SOUND_DEFINITIONS
 };
@@ -97,7 +99,7 @@ enum /* sound codes */
 	_snd_teleport_in,
 	_snd_teleport_out,
 	_snd_body_being_crunched,
-	_snd_nuclear_hard_death,
+	_snd_jjaro_creak,
 	_snd_absorbed,
 
 	_snd_breathing,
@@ -130,8 +132,8 @@ enum /* sound codes */
 	_snd_spht_platform_stopping,
 
 	_snd_owl,
-	_snd_unused2,
-	_snd_unused3,
+	_snd_smg_firing,
+	_snd_smg_reloading,
 	
 	_snd_heavy_spht_platform_starting,
 	_snd_heavy_spht_platform_stopping,
@@ -215,7 +217,7 @@ enum /* sound codes */
 	_snd_fan,
 	_snd_spht_door,
 	_snd_spht_platform,
-	_snd_unused4,
+	_snd_jjaro_noise,
 	_snd_heavy_spht_platform,
 	_snd_light_machinery,
 	_snd_heavy_machinery,
@@ -343,6 +345,19 @@ enum /* sound codes */
 	_snd_alien_noise1,
 	_snd_alien_noise2,
 
+	_snd_fusion_human_wail,
+	_snd_fusion_human_scream,
+	_snd_fusion_human_hit,
+	_snd_fusion_human_chatter,
+	_snd_assimilated_fusion_human_chatter,
+	_snd_fusion_human_trash_talk,
+	_snd_fusion_human_apology,
+	_snd_fusion_human_activation,
+	_snd_fusion_human_clear,
+	_snd_fusion_human_stop_shooting_me_you_bastard,
+	_snd_fusion_human_area_secure,
+	_snd_fusion_kill_the_player,
+
 	NUMBER_OF_SOUND_DEFINITIONS
 };
 
@@ -433,3 +448,5 @@ short random_sound_index_to_sound_index(short random_sound_index);
 #ifdef mac
 OSErr open_sound_file(FSSpec *spec);
 #endif
+
+void toggle_sound_pitch_modifier_override(boolean toggle);

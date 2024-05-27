@@ -65,7 +65,7 @@ boolean find_wad_file_that_has_checksum(
 				FSSpec test_directory_spec;
 			
 				getpstr(temporary, path_resource_id, index);
-				err= FSMakeFSSpec(app_spec.vRefNum, app_spec.parID, temporary, &test_directory_spec);
+				err= FSMakeFSSpec(app_spec.vRefNum, app_spec.parID, (StringPtr)temporary, &test_directory_spec);
 
 				if(!err)
 				{
@@ -163,7 +163,7 @@ boolean find_file_with_modification_date(
 				FSSpec test_directory_spec;
 			
 				getpstr(temporary, path_resource_id, index);
-				err= FSMakeFSSpec(app_spec.vRefNum, app_spec.parID, temporary, &test_directory_spec);
+				err= FSMakeFSSpec(app_spec.vRefNum, app_spec.parID, (StringPtr)temporary, &test_directory_spec);
 
 				if(!err)
 				{
@@ -214,13 +214,13 @@ static Boolean checksum_and_not_base_callback(
 	void *data)
 {
 	Boolean add_this_file= FALSE;
-	struct find_files_private_data *private= (struct find_files_private_data *) data;
+	struct find_files_private_data *private_data= (struct find_files_private_data *) data;
 	
 	/* Don't readd the base file.. */
-	if(!equal_fsspecs(file, (FSSpec *) private->base_file))
+	if(!equal_fsspecs(file, (FSSpec *) private_data->base_file))
 	{
 		/* Do the checksums match? */
-		if(wad_file_has_parent_checksum((FileDesc *) file, private->base_checksum))
+		if(wad_file_has_parent_checksum((FileDesc *) file, private_data->base_checksum))
 		{
 			add_this_file= TRUE;
 		}
@@ -234,10 +234,10 @@ static Boolean match_wad_checksum_callback(
 	void *data)
 {
 	Boolean add_this_file= FALSE;
-	struct find_checksum_private_data *private= (struct find_checksum_private_data *) data;
+	struct find_checksum_private_data *private_data= (struct find_checksum_private_data *) data;
 	
 	/* Do the checksums match? */
-	if(wad_file_has_checksum((FileDesc *) file, private->checksum_to_match))
+	if(wad_file_has_checksum((FileDesc *) file, private_data->checksum_to_match))
 	{
 		add_this_file= TRUE;
 	}
@@ -344,7 +344,7 @@ static Boolean match_modification_date_callback(
 {
 	Boolean add_this_file= FALSE;
 	CInfoPBRec *pb= (CInfoPBRec *) data;
-#pragma unused (file);
+#pragma unused (file)
 	if(pb->hFileInfo.ioFlMdDat==target_modification_date)
 	{
 		add_this_file= TRUE;

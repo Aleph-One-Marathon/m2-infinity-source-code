@@ -1,0 +1,113 @@
+#	BuildProgram - build the specified program
+#
+#	Usage:
+#		BuildProgram program [options…] > log
+#
+#	The BuildProgram script builds the specified program (or target).
+#	A simple transcript of the build is written to standard output.
+#
+#	Make is used to generate the build commands.  If file <program>.make
+#	exists it is used as the makefile.	If not, file MakeFile is used.
+#
+#	The options specified are passed directly to Make, and control the
+#	generation of the build commands.
+#
+#
+#	Copyright Apple Computer, Inc. 1987 - 1992
+#	All rights reserved.
+
+Set Exit 1
+
+#	Find the program parameter.
+
+Unset program
+For i In {"Parameters"}
+	If "{i}" !~ /-≈/
+		Set program "{i}"
+		Break
+	End
+End
+
+if "{program}"=="cseries"||"{program}"=="cseries.lib"||"{program}"=="cseries.xcoff"
+	# final build for PPC
+	Set PPCCOptions "-i ∂"{CSeriesInterfaces}∂" -typecheck relaxed -opt speed"
+	Set ObjPPC :objects:ppc:
+	Set TargPPC cseries.xcoff
+	Set OptimizationsPPC "-opt size"
+	Set SymbolsPPC "-sym off"
+	
+	# final build for 68k
+	Set COptions "-opt full -b2 -r -mbg off -k ∂"{CSeriesLibraries}∂""
+	Set Obj68k :Objects:68k:
+	Set Targ68k cseries.lib
+
+else if "{program}"=="cseries.debug"||"{program}"=="cseries.debug.lib"||"{program}"=="cseries.debug.xcoff"
+	# debug build for PPC
+	Set PPCCOptions "-i ∂"{CSeriesInterfaces}∂" -typecheck relaxed -sym on -d DEBUG"
+	Set ObjPPC :Objects:ppc.debug:
+	Set TargPPC cseries.debug.xcoff
+	Set OptimizationsPPC "-opt size"
+	Set SymbolsPPC "-sym off"
+
+	# debug build for 68k
+	Set COptions "-opt full -b2 -r -mbg on -d DEBUG -k ∂"{CSeriesLibraries}∂""
+	Set Obj68k :Objects:68k.debug:
+	Set Targ68k cseries.debug.lib
+	
+else if "{program}"=="cseries.sym"||"{program}"=="cseries.sym.xcoff"
+	# debug build with symbols for PPC
+	Set PPCCOptions "-i {CSeriesInterfaces} -typecheck relaxed -sym on -d DEBUG"
+	Set ObjPPC :Objects:ppc.sym:
+	Set TargPPC cseries.sym.xcoff
+	Set OptimizationsPPC "-opt off"
+	Set SymbolsPPC "-sym on"
+
+	# debug build for 68k
+	Set COptions "-opt full -b2 -r -mbg on -d DEBUG -k ∂"{CSeriesLibraries}∂""
+	Set Obj68k :Objects:68k.debug:
+	Set Targ68k cseries.debug.lib
+#else
+#	echo bad target
+#	exit 1
+end
+
+if ({MakeVulcan} == 1) && ({MakeModelFar} == 1)
+	set COptions "{COptions}"" -model far"
+end
+
+#for PPC
+Export PPCCOptions
+Export ObjPPC
+Export TargPPC
+Export OptimizationsPPC
+Export SymbolsPPC
+
+#for 68k
+Export COptions
+Export Obj68k
+Export Targ68k
+
+Set makefile `(Files -t TEXT "{program}".make || ∂
+	Files -t TEXT MakeFile || Echo '""') ≥ Dev:Null`
+If "{makefile}" == ""
+	Echo "### {0} - No makefile exists for {program}." > Dev:StdErr
+	Exit 1
+End
+
+#	Run Make, then execute its output.
+
+Echo "# `Date -t` ----- Build of {program}."
+Echo "# `Date -t` ----- Analyzing dependencies."
+Begin
+	Echo "Set Echo 1"
+	Make {"Parameters"} -f "{makefile}"
+End > "{program}".makeout
+Echo "# `Date -t` ----- Executing build commands."
+"{program}".makeout
+Delete "{program}".makeout
+Echo "# `Date -t` ----- Done."
+Set type "`files -i -n -x t "{program}" ≥ Dev:Null || Set Status 0`"
+Set CaseSensitive True #filetype check for DA must be case sensitive
+If "{type}" =~ /≈ APPL/ OR "{type}" =~ /≈ MPST/ 	# application or tool
+	Echo -n ∂t; Quote -n "{program}"; Echo -n " "
+End

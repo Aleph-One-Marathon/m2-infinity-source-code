@@ -32,19 +32,35 @@ Saturday, March 20, 1993 8:34:14 PM
 	cursor position to the EOF’.  glad i had a backup ...
 */
 
-#define _MACINTOSH_CODE
+#define mac
 
-#include "cseries.h"
-
-#ifdef powerc
-	#include "macintosh_interfaces.c" /* gak */
-#else
-	#ifndef mc68881
-		#pragma load "macintosh_interfaces.d"
+#ifdef __MWERKS__
+	#ifndef POWERPLANT
+		#ifdef powerc
+			#include "macintosh_interfaces.ppc"
+		#else
+			#include "macintosh_interfaces.68k"
+		#endif
 	#else
-		#pragma load "macintosh_interfaces881.d"
+		#ifdef powerc
+			#include "PP_interfaces.ppc"
+		#else
+			#include "PP_interfaces.68k"
+		#endif
+	#endif
+#else
+	#ifdef powerc
+		#include "macintosh_interfaces.c" /* gak */
+	#else
+		#ifndef mc68881
+			#pragma load "macintosh_interfaces.d"
+		#else
+			#pragma load "macintosh_interfaces881.d"
+		#endif
 	#endif
 #endif
+
+#include "cseries.h"
 
 /* ---------- constants */
 
@@ -105,14 +121,6 @@ Saturday, March 20, 1993 8:34:14 PM
 
 #define DIALOG_INSET 4
 
-enum
-{
-	fatalError,
-	infoError
-};
-
-#define NUMBER_OF_SYSTEM_COLORS 26
-
 /* indexes into the system_colors array */
 enum
 {
@@ -142,7 +150,8 @@ enum
 	inactiveApplePurple,
 	inactiveAppleBlue,
 	
-	stupidColor1
+	stupidColor1,
+	NUMBER_OF_SYSTEM_COLORS
 };
 
 enum /* modes for AdjustRect */
@@ -206,11 +215,14 @@ long get_a0(void)= {0x2008};
 long get_a1(void)= {0x2009};
 #endif
 
+#define AbsRandom() (Random()&0x7fff)
+
 /* ---------- external calls (yuck) and their callers */
 
 /* called by general_filter_proc() */
 void update_any_window(WindowPtr window, EventRecord *event);
 void activate_any_window(WindowPtr window, EventRecord *event, boolean activate);
+void global_idle_proc(void);
 
 /* ---------- prototypes: MACINTOSH_UTILITIES.C */
 	
@@ -233,13 +245,13 @@ void draw_popup_frame(Rect *bounds);
 RGBColor *SetRGBColor(RGBColor *color, word red, word green, word blue);
 
 boolean wait_for_mouse_to_move(Point origin, short threshold);
+short wait_for_click_or_keypress(long maximum_delay);
 
 void hold_for_visible_delay(void);
 void stay_awake(void);
 
-void alert_user(short type, short resource_number, short error_number, short identifier);
-
 /* getcstr is in cseries.h */
+short countstr(short resource_number);
 char *getpstr(char *buffer, short collection_number, short string_number);
 
 void AdjustRect(Rect *bounds, Rect *source, Rect *destination, short mode);
@@ -248,25 +260,76 @@ void ScaleRect(Rect *bounds, Rect *source, Rect *destination);
 void initialize_system_colors(void);
 
 char *pstrcpy(char *destStr, const char *srcStr);
+void pstrcat(unsigned char *str1, unsigned char *str2);
 
 /* rsprintf and dprintf are in cseries.h */
 int prsprintf(char *s, short resource_number, short string_number, ...);
 int psprintf(char *s, const char *format, ...);
 
-OSErr FSFlush(short handle);
+OSErr FSFlush(short hndl, short VRefNum);
 
 void GetNewTextSpec(TextSpecPtr font_info, short resource_number, short font_index);
 void SetFont(TextSpecPtr font_info);
 void GetFont(TextSpecPtr font_info);
 
+short get_our_country_code(void);
+
+short HOpenResFilePath(short vRefNum, long dirID, ConstStr255Param fileName,
+	char permission, short resource_number);
+short HOpenPath(short vRefNum, long dirID, ConstStr255Param fileName, char permission,
+	short *refNum, short resource_number);
+
+void kill_screen_saver(void);
+void restore_screen_saver(void);
+
+OSErr get_file_spec(FSSpec *spec, short string_resource_id, short file_name_index, short path_resource_id);
+OSErr get_my_fsspec(FSSpec *file);
+
 /* ---------- prototypes: DEVICES.C */
 
+#define deviceIsGrayscale 0x0000
+#define deviceIsColor 0x0001
+
+struct GDSpec
+{
+	short slot;
+	
+	word flags; /* deviceIsGrayscale || deviceIsColor */
+	short bit_depth; /* bits per pixel */
+	
+	short width, height;
+};
+typedef struct GDSpec GDSpec, *GDSpecPtr;
+
 GDHandle MostDevice(Rect *bounds);
-GDHandle BestDevice(short depth);
+GDHandle BestDevice(GDSpecPtr device_spec);
+
+void BuildExplicitGDSpec(GDSpecPtr device_spec, GDHandle device, word flags,
+	short bit_depth, short width, short height);
+void BuildGDSpec(GDSpecPtr device_spec, GDHandle device);
+GDHandle MatchGDSpec(GDSpecPtr device_spec);
+Boolean EqualGDSpec(GDSpecPtr device_spec1, GDSpecPtr device_spec2);
+
+boolean HasDepthGDSpec(GDSpecPtr device_spec);
+void SetDepthGDSpec(GDSpecPtr device_spec);
+
+boolean machine_has_display_manager(void);
+void SetResolutionGDSpec(GDSpecPtr device_spec, VDSwitchInfoPtr switchInfo);
+
+short GetSlotFromGDevice(GDHandle device);
+OSErr GetNameFromGDevice(GDHandle device, char *name);
+
 void HideMenuBar(GDHandle device);
 void ShowMenuBar(void);
 
 void LowLevelSetEntries(short start, short count, CSpecArray aTable);
+
+CTabHandle build_macintosh_color_table(struct color_table *color_table);
+struct color_table *build_color_table(struct color_table *color_table, CTabHandle macintosh_color_table);
+
+/* ---------- prototypes/DEVICE_DIALOG.C */
+
+GDHandle display_device_dialog(GDSpecPtr device_spec);
 
 /* ---------- prototypes: DIALOGS.C */
 
@@ -295,4 +358,5 @@ float extract_float_from_text_item(DialogPtr dialog, short item_num);
 void insert_number_into_text_item(DialogPtr dialog, short item_number, long new_value);
 void insert_float_into_text_item(DialogPtr dialog, short item_num, float new_value);
 
+MenuHandle get_popup_menu_handle(DialogPtr dialog, short item);
 #endif

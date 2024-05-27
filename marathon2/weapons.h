@@ -16,6 +16,7 @@ enum { /* Weapons */
 	_weapon_alien_shotgun,
 	_weapon_shotgun,
 	_weapon_ball, // or something
+	_weapon_smg,
 	MAXIMUM_NUMBER_OF_WEAPONS,
 	
 	_weapon_doublefisted_pistols= MAXIMUM_NUMBER_OF_WEAPONS, /* This is a pseudo-weapon */

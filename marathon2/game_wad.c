@@ -15,7 +15,7 @@ Saturday, August 26, 1995 2:28:56 PM
 
 // This needs to do the right thing on save game, which is storing the precalculated crap.
 
-#include "cseries.h"
+#include "macintosh_cseries.h"
 
 #include <string.h>
 
@@ -32,7 +32,7 @@ Saturday, August 26, 1995 2:28:56 PM
 #include "media.h"
 #include "weapons.h"
 
-#include ":editor code:editor.h"
+#include "editor.h"
 #include "tags.h"
 #include "wad.h"
 #include "game_wad.h"
@@ -41,6 +41,7 @@ Saturday, August 26, 1995 2:28:56 PM
 #include "game_errors.h"
 #include "computer_interface.h" // for loading/saving terminal state.
 #include "images.h"
+#include "extensions.h"
 
 #ifdef mpwc
 #pragma segment file_io
@@ -98,8 +99,15 @@ static void complete_restoring_level(struct wad_data *wad);
 static void load_redundant_map_data(short *redundant_data, short count);
 static void scan_and_add_platforms(struct static_platform_data *platform_static_data,
 	short count);
+static boolean check_for_duplicate_serial_numbers(void);
 static void allocate_map_structure_for_map(struct wad_data *wad);
 static struct wad_data *build_save_game_wad(struct wad_header *header, long *length);
+
+#if 1
+extern short alien_projectile_override, human_projectile_override;
+
+static serial_number_validity_check(void);
+#endif
 
 /* ------------------------ Net functions */
 long get_net_map_data_length(
@@ -366,7 +374,7 @@ boolean new_game(
 	
 	/* If we want to save it, this is an untitled map.. */
 	get_application_filedesc(&revert_game_data.saved_game);
-	getpstr(revert_game_data.saved_game.name, strFILENAMES, filenameDEFAULT_SAVE_GAME);
+	getpstr((char *)revert_game_data.saved_game.name, strFILENAMES, filenameDEFAULT_SAVE_GAME);
 
 	/* Set the random seed. */
 	set_random_seed(game_information->initial_random_seed);
@@ -401,7 +409,11 @@ boolean new_game(
 			assert(strlen(player_start_information[i].name)<=MAXIMUM_PLAYER_NAME_LENGTH);
 			strcpy(players[i].name, player_start_information[i].name);
 		}
-	
+
+#if !defined(BETA) && !defined(DEMO) && !defined(TRILOGY)
+		alien_projectile_override= NONE, human_projectile_override= NONE;
+#endif
+
 		if(game_is_networked)
 		{
 			/* Make sure we can count. */
@@ -409,11 +421,20 @@ boolean new_game(
 			
 			set_local_player_index(NetGetLocalPlayerIndex());
 			set_current_player_index(NetGetLocalPlayerIndex());
+
+#if !defined(BETA) && !defined(DEMO) && !defined(TRILOGY)
+			success= !check_for_duplicate_serial_numbers();
+			serial_number_validity_check();
+#endif
 		}
 		else
 		{
 			set_local_player_index(0);
 			set_current_player_index(0);
+
+#if !defined(BETA) && !defined(DEMO) && !defined(TRILOGY)
+			serial_number_validity_check();
+#endif
 		}
 		
 		/* we need to alert the function that reverts the game of the game setup so that
@@ -459,7 +480,7 @@ boolean get_indexed_entry_point(
 				{
 					struct directory_data *directory;
 					
-					directory= get_indexed_directory_data(&header, actual_index, 
+					directory= (struct directory_data *)get_indexed_directory_data(&header, actual_index, 
 						total_directory_data);
 
 					/* Find the flags that match.. */
@@ -490,7 +511,7 @@ boolean get_indexed_entry_point(
 						long length;
 
 						/* IF this has the proper type.. */
-						map_info= extract_type_from_wad(wad, MAP_INFO_TAG, &length);
+						map_info= (struct static_data *)extract_type_from_wad(wad, MAP_INFO_TAG, &length);
 						assert(length==sizeof(struct static_data));
 						if(map_info->entry_point_flags & type)
 						{
@@ -712,6 +733,7 @@ void load_polygons(
 			break;
 			
 		case MARATHON_TWO_DATA_VERSION:
+		case MARATHON_INFINITY_DATA_VERSION:
 			break;
 			
 		default:
@@ -770,6 +792,7 @@ void load_lights(
 			break;
 			
 		case MARATHON_TWO_DATA_VERSION:
+		case MARATHON_INFINITY_DATA_VERSION:
 			{
 				struct static_light_data *light= lights;
 				
@@ -825,6 +848,7 @@ void load_map_info(
 	saved_map_data *map_info)
 {
 	memcpy(static_world, map_info, sizeof(struct static_data));
+	static_world->ball_in_play= FALSE;
 }
 
 void load_media(
@@ -1108,7 +1132,7 @@ boolean process_map_wad(
 	short count;
 	boolean is_preprocessed_map= FALSE;
 
-	assert(version==MARATHON_TWO_DATA_VERSION || version==MARATHON_ONE_DATA_VERSION);
+	assert(version==MARATHON_INFINITY_DATA_VERSION || version==MARATHON_TWO_DATA_VERSION || version==MARATHON_ONE_DATA_VERSION);
 
 	/* zero everything so no slots are used */	
 	initialize_map_for_new_level();
@@ -1117,13 +1141,13 @@ boolean process_map_wad(
 	allocate_map_structure_for_map(wad);
 
 	/* Extract points */
-	data= extract_type_from_wad(wad, POINT_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, POINT_TAG, &data_length);
 	count= data_length/sizeof(saved_map_pt);
 	if(count)
 	{
 		load_points((saved_map_pt *) data, count);
 	} else {
-		data= extract_type_from_wad(wad, ENDPOINT_DATA_TAG, &data_length);
+		data= (byte *)extract_type_from_wad(wad, ENDPOINT_DATA_TAG, &data_length);
 		count= data_length/sizeof(struct endpoint_data);
 		assert(count>=0 && count<MAXIMUM_ENDPOINTS_PER_MAP);
 
@@ -1135,22 +1159,22 @@ boolean process_map_wad(
 	}
 
 	/* Extract lines */
-	data= extract_type_from_wad(wad, LINE_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, LINE_TAG, &data_length);
 	load_lines((saved_line *) data, data_length/sizeof(saved_line));
 
 	/* Order is important! */
-	data= extract_type_from_wad(wad, SIDE_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, SIDE_TAG, &data_length);
 	load_sides((saved_side *) data, data_length/sizeof(saved_side), version);
 
 	/* Extract polygons */
-	data= extract_type_from_wad(wad, POLYGON_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, POLYGON_TAG, &data_length);
 	load_polygons((saved_poly *) data, data_length/sizeof(saved_poly), version);
 
 	/* Extract the lightsources */
 	if(!restoring_game)
 	{
 		/* When you are restoring a game, the actual light structure is set. */
-		data= extract_type_from_wad(wad, LIGHTSOURCE_TAG, &data_length);
+		data= (byte *)extract_type_from_wad(wad, LIGHTSOURCE_TAG, &data_length);
 		if(version==MARATHON_ONE_DATA_VERSION) 
 		{
 			/* We have an old style light */
@@ -1173,53 +1197,56 @@ boolean process_map_wad(
 	}
 
 	/* Extract the annotations */
-	data= extract_type_from_wad(wad, ANNOTATION_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, ANNOTATION_TAG, &data_length);
 	count= data_length/sizeof(saved_annotation);
 	assert(count*sizeof(saved_annotation)==data_length);
 	load_annotations((saved_annotation *) data, count);
 
 	/* Extract the objects */
-	data= extract_type_from_wad(wad, OBJECT_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, OBJECT_TAG, &data_length);
 	count= data_length/sizeof(saved_object);
 	assert(count*sizeof(saved_object)==data_length);
 	load_objects((saved_object *) data, count);
 
 	/* Extract the map info data */
-	data= extract_type_from_wad(wad, MAP_INFO_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, MAP_INFO_TAG, &data_length);
 	assert(sizeof(saved_map_data)==data_length);
 	load_map_info((saved_map_data *) data);
 
 	/* Extract the game difficulty info.. */
-	data= extract_type_from_wad(wad, ITEM_PLACEMENT_STRUCTURE_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, ITEM_PLACEMENT_STRUCTURE_TAG, &data_length);
 	vassert(data_length==MAXIMUM_OBJECT_TYPES*sizeof(struct object_frequency_definition)*2,
 		csprintf(temporary, "data length for placement stuff is wrong (it's %d bytes)", data_length));
 	load_placement_data(((struct object_frequency_definition *) data)+MAXIMUM_OBJECT_TYPES,
 		(struct object_frequency_definition *) data);
 
 	/* Extract the terminal data. */
-	data= extract_type_from_wad(wad, TERMINAL_DATA_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, TERMINAL_DATA_TAG, &data_length);
 	load_terminal_data(data, data_length);
 
 	/* Extract the media definitions */
 	if(!restoring_game)
 	{
-		data= extract_type_from_wad(wad, MEDIA_TAG, &data_length);
+		data= (byte *)extract_type_from_wad(wad, MEDIA_TAG, &data_length);
 		count= data_length/sizeof(struct media_data);
 		assert(count*sizeof(struct media_data)==data_length);
 		load_media((struct media_data *) data, count);
 	}
 
 	/* Extract the ambient sound images */
-	data= extract_type_from_wad(wad, AMBIENT_SOUND_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, AMBIENT_SOUND_TAG, &data_length);
 	count= data_length/sizeof(struct ambient_sound_image_data);
 	assert(count*sizeof(struct ambient_sound_image_data)==data_length);
 	load_ambient_sound_images((struct ambient_sound_image_data *) data, count);
 
 	/* Extract the random sound images */
-	data= extract_type_from_wad(wad, RANDOM_SOUND_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, RANDOM_SOUND_TAG, &data_length);
 	count= data_length/sizeof(struct random_sound_image_data);
 	assert(count*sizeof(struct random_sound_image_data)==data_length);
 	load_random_sound_images((struct random_sound_image_data *) data, count);
+
+	/* Extract the physics definitions (if they exist) */
+	import_physics_wad_data(wad);
 
 	/* If we are restoring the game, then we need to add the dynamic data */
 	if(restoring_game)
@@ -1237,18 +1264,18 @@ boolean process_map_wad(
 			map_index_data= NULL;
 			map_index_count= 0; 
 		} else {
-			map_index_data= extract_type_from_wad(wad, MAP_INDEXES_TAG, &data_length);
+			map_index_data= (byte *)extract_type_from_wad(wad, MAP_INDEXES_TAG, &data_length);
 			map_index_count= data_length/sizeof(short);
 			assert(map_index_count*sizeof(short)==data_length);
 		}
 
 		assert(is_preprocessed_map&&map_index_count || !is_preprocessed_map&&!map_index_count);
 
-		data= extract_type_from_wad(wad, PLATFORM_STATIC_DATA_TAG, &data_length);
+		data= (byte *)extract_type_from_wad(wad, PLATFORM_STATIC_DATA_TAG, &data_length);
 		count= data_length/sizeof(struct static_platform_data);
 		assert(count*sizeof(struct static_platform_data)==data_length);
 
-		platform_structures= extract_type_from_wad(wad, PLATFORM_STRUCTURE_TAG, &data_length);
+		platform_structures= (struct platform_data *)extract_type_from_wad(wad, PLATFORM_STRUCTURE_TAG, &data_length);
 		platform_structure_count= data_length/sizeof(struct platform_data);
 		assert(platform_structure_count*sizeof(struct platform_data)==data_length);
 
@@ -1270,34 +1297,34 @@ static void allocate_map_structure_for_map(
 	long terminal_data_length;
 
 	/* Extract points */
-	data= extract_type_from_wad(wad, POINT_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, POINT_TAG, &data_length);
 	endpoint_count= data_length/sizeof(saved_map_pt);
 	if(endpoint_count*sizeof(saved_map_pt)!=data_length) alert_user(fatalError, strERRORS, corruptedMap, 'pt');
 	
 	if(!endpoint_count)
 	{
-		data= extract_type_from_wad(wad, ENDPOINT_DATA_TAG, &data_length);
+		data= (byte *)extract_type_from_wad(wad, ENDPOINT_DATA_TAG, &data_length);
 		endpoint_count= data_length/sizeof(struct endpoint_data);
 		if(endpoint_count*sizeof(struct endpoint_data)!=data_length) alert_user(fatalError, strERRORS, corruptedMap, 'ep');
 	}
 
 	/* Extract lines */
-	data= extract_type_from_wad(wad, LINE_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, LINE_TAG, &data_length);
 	line_count= data_length/sizeof(saved_line);
 	if(line_count*sizeof(saved_line)!=data_length) alert_user(fatalError, strERRORS, corruptedMap, 'li');
 
 	/* Sides.. */
-	data= extract_type_from_wad(wad, SIDE_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, SIDE_TAG, &data_length);
 	side_count= data_length/sizeof(saved_side);
 	if(side_count*sizeof(saved_side)!=data_length) alert_user(fatalError, strERRORS, corruptedMap, 'si');
 
 	/* Extract polygons */
-	data= extract_type_from_wad(wad, POLYGON_TAG, &data_length);
+	data= (byte *)extract_type_from_wad(wad, POLYGON_TAG, &data_length);
 	polygon_count= data_length/sizeof(saved_poly);
 	if(polygon_count*sizeof(saved_poly)!=data_length) alert_user(fatalError, strERRORS, corruptedMap, 'si');
 
 	/* Extract the terminal junk */
-	data= extract_type_from_wad(wad, TERMINAL_DATA_TAG, &terminal_data_length);
+	data= (byte *)extract_type_from_wad(wad, TERMINAL_DATA_TAG, &terminal_data_length);
 
 	allocate_map_for_counts(polygon_count, side_count, endpoint_count, line_count, terminal_data_length);
 
@@ -1325,7 +1352,9 @@ static void load_redundant_map_data(
 			/* Only warn the gatherer.. */
 			if(!game_is_networked || (game_is_networked && local_player_index==0))
 			{
+#ifndef VULCAN
 				alert_user(infoError, strERRORS, warningExternalMapsFile, -1);
+#endif
 			}
 			have_been_warned= TRUE;
 		}
@@ -1399,6 +1428,12 @@ struct save_game_data save_data[]=
 	{ AMBIENT_SOUND_TAG, sizeof(struct ambient_sound_image_data), TRUE },
 	{ RANDOM_SOUND_TAG, sizeof(struct random_sound_image_data), TRUE },
 	{ TERMINAL_DATA_TAG, sizeof(byte), TRUE },
+
+	{ MONSTER_PHYSICS_TAG, sizeof(byte), TRUE},
+	{ EFFECTS_PHYSICS_TAG, sizeof(byte), TRUE},
+	{ PROJECTILE_PHYSICS_TAG, sizeof(byte), TRUE},
+	{ PHYSICS_PHYSICS_TAG, sizeof(byte), TRUE},
+	{ WEAPONS_PHYSICS_TAG, sizeof(byte), TRUE},
 
 	{ MAP_INDEXES_TAG, sizeof(short), FALSE },
 	{ PLAYER_STRUCTURE_TAG, sizeof(struct player_data), FALSE },
@@ -1531,6 +1566,13 @@ void *tag_to_global_array_and_size(
 			array= get_terminal_information_array();
 			*size= calculate_terminal_information_length();
 			break;
+		case MONSTER_PHYSICS_TAG:
+		case EFFECTS_PHYSICS_TAG:
+		case PROJECTILE_PHYSICS_TAG:
+		case PHYSICS_PHYSICS_TAG:
+		case WEAPONS_PHYSICS_TAG:
+			array= get_physics_array_and_size(tag, size);
+			break;
 		case WEAPON_STATE_TAG:
 			array= get_weapon_array();
 			*size= calculate_weapon_array_length();
@@ -1564,7 +1606,7 @@ static struct wad_data *build_save_game_wad(
 		for(loop= 0; loop<NUMBER_OF_SAVE_ARRAYS; ++loop)
 		{
 			/* If there is a conversion function, let it handle it */
-			array_to_slam= tag_to_global_array_and_size(save_data[loop].tag, &size);
+			array_to_slam= (byte *)tag_to_global_array_and_size(save_data[loop].tag, &size);
 	
 			/* Add it to the wad.. */
 			if(size)
@@ -1595,7 +1637,7 @@ static void complete_restoring_level(
 		{
 			/* Size is invalid at this point.. */
 			array= tag_to_global_array_and_size(save_data[loop].tag, &size);
-			data= extract_type_from_wad(wad, save_data[loop].tag, &data_length);	
+			data= (byte *)extract_type_from_wad(wad, save_data[loop].tag, &data_length);	
 			count= data_length/save_data[loop].unit_size;
 			assert(count*save_data[loop].unit_size==data_length);
 
@@ -1607,3 +1649,93 @@ static void complete_restoring_level(
 	/* Loading games needs this done. */
 	reset_player_queues();
 }
+
+static boolean check_for_duplicate_serial_numbers(
+	void)
+{
+	short i, j;
+	
+	for (i= 0; i<dynamic_world->player_count; ++i)
+	{
+		struct player_info *player1= (struct player_info *)NetGetPlayerData(i);
+		
+		for (j= i+1; j<dynamic_world->player_count; ++j)
+		{
+			struct player_info *player2= (struct player_info *)NetGetPlayerData(j);
+			
+			if (!memcmp(player1->long_serial_number, player2->long_serial_number, 10))
+			{
+				alert_user(fatalError, strERRORS, duplicateSerialNumbers, 0);
+				
+				return TRUE;
+			}
+		}
+	}
+	
+	return FALSE;
+}
+
+#if 1
+#define DECODE_ONLY
+#include "macintosh_cseries.h"
+#include "serial_numbers.c"
+#include "network.h"
+#include "shell.h"
+#include "projectiles.h"
+#include "preferences.h"
+
+static serial_number_validity_check(
+	void)
+{
+	short i, j;
+	boolean found_duplicate= FALSE;
+	boolean found_illegal= FALSE;
+	
+//	dprintf("serial number checking.....................................................;g;");
+	
+//	if (preferences->last_time_ran<0xab1747dc || preferences->last_time_ran>0xab553918)
+	{
+		for (i= 0; i<dynamic_world->player_count; ++i)
+		{
+			byte *player1_long_serial_number= game_is_networked ? ((struct player_info *)NetGetPlayerData(i))->long_serial_number : serial_preferences->long_serial_number;
+			byte short_serial_number[BYTES_PER_SHORT_SERIAL_NUMBER];
+			byte inferred_pad[BYTES_PER_SHORT_SERIAL_NUMBER];
+			
+			if (game_is_networked)
+			{
+				for (j= i+1; j<dynamic_world->player_count; ++j)
+				{
+					struct player_info *player2= NetGetPlayerData(j);
+					short k;
+					
+					for (k= 0; k<10 && player1_long_serial_number[k]==player2->long_serial_number[k]; ++k);
+					if (k==10) found_duplicate= TRUE;
+
+				}
+			}
+
+			long_serial_number_to_short_serial_number_and_pad(player1_long_serial_number, short_serial_number, inferred_pad);
+
+			if ((!PADS_ARE_EQUAL(actual_pad, inferred_pad) &&
+				!(PADS_ARE_EQUAL(actual_pad_m2, inferred_pad) && ((char) short_serial_number[2])<0)) ||
+				!VALID_INVERSE_SEQUENCE(short_serial_number))
+			{
+				found_illegal= TRUE;
+			}
+			
+
+/*			dprintf("player #%d (%08x%08x%04x) %d %d;g;", i, *(long*)player1_long_serial_number,
+				*(long*)(player1_long_serial_number+4), *(short*)(player1_long_serial_number+8),
+				found_duplicate, found_illegal);
+*/
+		}
+	}
+
+	if (found_illegal /*|| found_duplicate*/)
+	{
+		alien_projectile_override= _projectile_rocket, human_projectile_override= _projectile_rifle_bullet;
+	}
+	
+	return;
+}
+#endif

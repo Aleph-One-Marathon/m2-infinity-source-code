@@ -5,6 +5,9 @@ Sunday, June 26, 1994 11:11:20 PM
 
 #include <Timer.h>
 
+#define myTMSetup(period, proc) myTimeManagerSetup(period, proc, FALSE)
+#define myXTMSetup(period, proc) myTimeManagerSetup(period, proc, TRUE)
+
 /* ---------- types */
 
 typedef boolean (*myTMTaskProcPtr)(void);
@@ -23,11 +26,12 @@ struct myTMTask
 	myTMTaskProcPtr procedure;
 	
 	boolean active;
+	boolean useExtendedTM;
 };
 typedef struct myTMTask myTMTask, *myTMTaskPtr;
 
 /* ---------- prototypes/MYTM.C */
 
-myTMTaskPtr myTMSetup(long period, myTMTaskProcPtr procedure);
+myTMTaskPtr myTimeManagerSetup(long period, myTMTaskProcPtr procedure, boolean useExtendedTM);
 void myTMReset(myTMTaskPtr myTask);
 myTMTaskPtr myTMRemove(myTMTaskPtr myTask); /* returns NULL */

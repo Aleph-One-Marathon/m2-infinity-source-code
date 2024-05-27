@@ -20,10 +20,13 @@ Wednesday, July 28, 1993 8:59:24 AM
 Wednesday, December 8, 1993 2:16:37 PM
 	the preferences are now allocated in a pointer.  are_preferences_out_of_date was removed
 	and read_preferences_file does all the magic now.
+Monday, August 15, 1994 9:41:52 PM
+	now there is checksumming of the files, using the stuff from checksum.c
 */
 
 #include "macintosh_cseries.h"
 #include "preferences.h"
+#include "checksum.h"
 
 #include <Folders.h>
 
@@ -33,10 +36,21 @@ Wednesday, December 8, 1993 2:16:37 PM
 
 /* ---------- constants */
 
+#define PREFERENCES_HEADER_VERSION 1
+
 /* ---------- structures */
+
+struct preferences_header
+{
+	short preferences_version;
+	short preferences_header_version;
+	Checksum checksum;
+};
 
 struct preferences_info
 {
+	short preferences_version;
+	short preferences_size;
 	short prefVRefNum;
 	long prefDirID;
 	
@@ -55,15 +69,26 @@ OSErr write_preferences_file(
 	long size;
 	OSErr error;
 	short refNum;
-	
+	struct preferences_header header;
+
 	error= HOpen(prefInfo->prefVRefNum, prefInfo->prefDirID, prefInfo->prefName, fsRdWrPerm, &refNum);
 	if (error==noErr)
 	{
-		size= GetPtrSize(preferences);
-		assert(size>0);
+		header.preferences_header_version = PREFERENCES_HEADER_VERSION;
+		header.preferences_version = prefInfo->preferences_version;
+		new_checksum(&header.checksum, ADD_CHECKSUM);
+		update_checksum(&header.checksum, preferences, prefInfo->preferences_size);
+		size = sizeof(header);
+		error = FSWrite(refNum, &size, (Ptr) &header);
 		
-		error= FSWrite(refNum, &size, preferences);
-		FSClose(refNum);
+		if (error == noErr)
+		{
+			size= GetPtrSize(preferences);
+			assert(size>0);
+
+			error= FSWrite(refNum, &size, preferences);
+			FSClose(refNum);
+		}
 	}
 	
 	return error;
@@ -86,10 +111,14 @@ OSErr read_preferences_file(
 	short refNum;
 	OSErr error;
 	long actual_size, size;
+	struct preferences_header header;
+	Checksum check;
 
 	/* allocate space for our global structure to keep track of the prefs file */
 	prefInfo= (struct preferences_info *) NewPtr(sizeof(struct preferences_info)+*prefName);
 	BlockMove(prefName, prefInfo->prefName, *prefName+1);
+	prefInfo->preferences_version = expected_version;
+	prefInfo->preferences_size = expected_size;
 
 	/* allocate space for the prefs themselves */
 	*preferences= NewPtrClear(expected_size);
@@ -119,14 +148,26 @@ OSErr read_preferences_file(
 					/* read as many bytes as we can or as will fit into our buffer from the
 						preferences file */
 					actual_size= infoPB->hFileInfo.ioFlLgLen;
-					size= MIN(expected_size, actual_size);
-					error= FSRead(refNum, &size, *preferences);
+
+					size = MIN(sizeof(struct preferences_header), actual_size);
+					error = FSRead(refNum, &size, &header);
+					
+					size= MIN(expected_size, actual_size - sizeof(struct preferences_header));
+					if (size > 0)
+						error= FSRead(refNum, &size, *preferences);
+					else
+						error= TRUE;
 					FSClose(refNum);
 					
 					if (error==noErr)
 					{
-						/* if we've got the wrong size or the wrong version, reinitialize */
-						if (actual_size!=expected_size||*((short*)*preferences)!=expected_version)
+						new_checksum(&check, ADD_CHECKSUM);
+						update_checksum(&check, *preferences, size);
+						/* if we've got bad prefs, reinitialize */
+						if (actual_size-sizeof(struct preferences_header) != expected_size
+							|| header.preferences_header_version != PREFERENCES_HEADER_VERSION
+							|| header.preferences_version != expected_version
+							|| !equal_checksums(&header.checksum, &check))
 						{
 							initialize_preferences(*preferences);
 							error= write_preferences_file(*preferences);

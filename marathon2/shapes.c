@@ -39,6 +39,8 @@ Friday, June 16, 1995 11:34:08 AM  (Jason)
 #pragma segment shell
 #endif
 
+//#define SCREAMING_METAL
+
 /* ---------- constants */
 
 #define iWHITE 1
@@ -80,7 +82,7 @@ static void build_global_shading_table16(void);
 static void build_global_shading_table32(void);
 
 static boolean get_next_color_run(struct rgb_color_value *colors, short color_count, short *start, short *count);
-static boolean new_color_run(struct rgb_color_value *new, struct rgb_color_value *last);
+static boolean new_color_run(struct rgb_color_value *new_run, struct rgb_color_value *last);
 
 static long get_shading_table_size(short collection_code);
 
@@ -257,20 +259,6 @@ struct shape_information_data *extended_get_shape_information(
 	collection= get_collection_definition(collection_index);
 	low_level_shape= get_low_level_shape_definition(collection_index, low_level_shape_index);
 
-	/* this will be removed when it’s calculated in the extractor */
-#ifdef OBSOLETE
-	{
-		struct bitmap_definition *bitmap= get_bitmap_definition(collection_index, low_level_shape->bitmap_index);
-
-		low_level_shape->world_left= (-low_level_shape->origin_x)*collection->pixels_to_world;
-		low_level_shape->world_top= - (-low_level_shape->origin_y)*collection->pixels_to_world;
-		low_level_shape->world_right= (bitmap->width-low_level_shape->origin_x)*collection->pixels_to_world;
-		low_level_shape->world_bottom= - (bitmap->height-low_level_shape->origin_y)*collection->pixels_to_world;
-		low_level_shape->world_x0= (low_level_shape->key_x-low_level_shape->origin_x)*collection->pixels_to_world;
-		low_level_shape->world_y0= - (low_level_shape->key_y-low_level_shape->origin_y)*collection->pixels_to_world;
-	}
-#endif
-
 	return (struct shape_information_data *) low_level_shape;
 }
 
@@ -413,7 +401,7 @@ void load_collections(
 	update_color_environment();
 
 #ifdef DEBUG
-//	debug_shapes_memory();
+	debug_shapes_memory();
 #endif
 
 	return;
@@ -525,7 +513,7 @@ static void update_color_environment(
 				bitmap->row_addresses[0]= calculate_bitmap_origin(bitmap);
 				precalculate_bitmap_row_addresses(bitmap);
 
-				/* ... and remap it */
+				/* remap it ... */
 				remap_bitmap(bitmap, remapping_table);
 			}
 			
@@ -560,15 +548,15 @@ static void update_color_environment(
 						case 8:
 							/* duplicate the primary shading table and remap it */
 							memcpy(alternate_shading_table, primary_shading_table, get_shading_table_size(collection_index));
-							map_bytes(alternate_shading_table, shading_remapping_table, get_shading_table_size(collection_index));
+							map_bytes((unsigned char *)alternate_shading_table, shading_remapping_table, get_shading_table_size(collection_index));
 							break;
 						
 						case 16:
-							build_shading_tables16(colors, color_count, alternate_shading_table, shading_remapping_table); break;
+							build_shading_tables16(colors, color_count, (unsigned short *)alternate_shading_table, shading_remapping_table); break;
 							break;
 						
 						case 32:
-							build_shading_tables32(colors, color_count, alternate_shading_table, shading_remapping_table); break;
+							build_shading_tables32(colors, color_count, (unsigned long *)alternate_shading_table, shading_remapping_table); break;
 							break;
 						
 						default:
@@ -580,9 +568,9 @@ static void update_color_environment(
 					/* build the primary shading table */
 					switch (collection_bit_depth)
 					{
-						case 8: build_shading_tables8(colors, color_count, primary_shading_table); break;
-						case 16: build_shading_tables16(colors, color_count, primary_shading_table, (byte *) NULL); break;
-						case 32: build_shading_tables32(colors, color_count, primary_shading_table, (byte *) NULL); break;
+						case 8: build_shading_tables8(colors, color_count, (unsigned char *)primary_shading_table); break;
+						case 16: build_shading_tables16(colors, color_count, (unsigned short *)primary_shading_table, (byte *) NULL); break;
+						case 32: build_shading_tables32(colors, color_count, (unsigned long *)primary_shading_table, (byte *) NULL); break;
 						default: halt();
 					}
 				}
@@ -665,9 +653,12 @@ static void build_shading_tables8(
 	return;
 }
 #else
-short find_closest_color(
+static short find_closest_color(struct rgb_color *color, register struct rgb_color_value *colors,
+	short color_count);
+
+static short find_closest_color(
 	struct rgb_color *color,
-	register struct rgb_color *colors,
+	register struct rgb_color_value *colors,
 	short color_count)
 {
 	short i;
@@ -688,7 +679,7 @@ short find_closest_color(
 }
 
 static void build_shading_tables8(
-	struct rgb_color *colors,
+	struct rgb_color_value *colors,
 	short color_count,
 	pixel8 *shading_tables)
 {
@@ -704,8 +695,8 @@ static void build_shading_tables8(
 		{
 			for (level= 0; level<number_of_shading_tables; ++level)
 			{
-				struct rgb_color *color= colors + start + i;
-				RGBColor result;
+				struct rgb_color_value *color= colors + start + i;
+				struct rgb_color result;
 				
 				result.red= (color->red*level)/(number_of_shading_tables-1);
 				result.green= (color->green*level)/(number_of_shading_tables-1);
@@ -873,10 +864,10 @@ static boolean get_next_color_run(
 }
 
 static boolean new_color_run(
-	struct rgb_color_value *new,
+	struct rgb_color_value *new_run,
 	struct rgb_color_value *last)
 {
-	if ((long)last->red+(long)last->green+(long)last->blue<(long)new->red+(long)new->green+(long)new->blue)
+	if ((long)last->red+(long)last->green+(long)last->blue<(long)new_run->red+(long)new_run->green+(long)new_run->blue)
 	{
 		return TRUE;
 	}
@@ -958,7 +949,7 @@ static void build_collection_tinting_table(
 		case _collection_player:
 		case _collection_rocket:
 		case _collection_civilian:
-		case _collection_madd:
+		case _collection_vacuum_civilian:
 			tint_color= _tint_collection_yellow;
 			break;
 		
@@ -982,13 +973,13 @@ static void build_collection_tinting_table(
 		switch (bit_depth)
 		{
 			case 8:
-				build_tinting_table8(colors, color_count, tint_table, tint_colors8[tint_color].start, tint_colors8[tint_color].count);
+				build_tinting_table8(colors, color_count, (unsigned char *)tint_table, tint_colors8[tint_color].start, tint_colors8[tint_color].count);
 				break;
 			case 16:
-				build_tinting_table16(colors, color_count, tint_table, tint_colors16+tint_color);
+				build_tinting_table16(colors, color_count, (unsigned short *)tint_table, tint_colors16+tint_color);
 				break;
 			case 32:
-				build_tinting_table32(colors, color_count, tint_table, tint_colors16+tint_color);
+				build_tinting_table32(colors, color_count, (unsigned long *)tint_table, tint_colors16+tint_color);
 				break;
 		}
 	}
@@ -1184,7 +1175,7 @@ static void debug_shapes_memory(
 	short collection_index;
 	struct collection_header *header;
 	
-	long total_size;
+	long total_size= 0;
 
 	for (collection_index= 0, header= collection_headers; collection_index<MAXIMUM_COLLECTIONS; ++collection_index, ++header)
 	{
@@ -1192,12 +1183,14 @@ static void debug_shapes_memory(
 		{
 			struct collection_definition *definition= get_collection_definition(collection_index);
 			
-			dprintf("collection #% 2d @ #% 9d bytes", collection_index, definition->size);
+//			dprintf("collection #% 2d @ #% 9d bytes", collection_index, definition->size);
 			total_size+= definition->size;
 		}
 	}
 	
-	dprintf("                  #% 9d bytes total", total_size);
+//	dprintf("                  #% 9d bytes total", total_size);
+
+//	dprintf("shapes for this level take #%d bytes;g;", total_size);
 	
 	return;
 }

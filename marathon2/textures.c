@@ -185,3 +185,34 @@ void map_bytes(
 	
 	return;
 }
+
+#if 0
+long bitmap_size(
+	struct bitmap_definition *bitmap)
+{
+	pixel8 *read= bitmap->row_addresses[0];
+	long size;
+	
+	if (bitmap->bytes_per_row==NONE)
+	{
+		short row;
+		
+		size= 0;
+		for (row= 0; row<rows; ++row)
+		{
+			short first= *((short *)read)++;
+			short last= *((short *)read)++;
+			short run_length= last-first;
+			
+			read+= run_length;
+			size+= 2*sizeof(short) + run_length;
+		}
+	}
+	else
+	{
+		size= bitmap->width*bitmap->height;
+	}
+	
+	return size;
+}
+#endif

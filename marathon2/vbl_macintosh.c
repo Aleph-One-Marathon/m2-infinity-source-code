@@ -8,6 +8,10 @@
 #include "macintosh_cseries.h"
 #include <Folders.h>
 #include <string.h>
+#ifdef SUPPORT_INPUT_SPROCKET
+#include "InputSprocket.h"
+#include "macintosh_input.h"
+#endif
 
 #include "map.h"
 #include "shell.h"
@@ -85,7 +89,7 @@ boolean get_freespace_on_disk(
 	memset(&parms, 0, sizeof(HParamBlockRec));	
 	parms.volumeParam.ioCompletion = NULL;
 	parms.volumeParam.ioVolIndex = 0;
-	parms.volumeParam.ioNamePtr = temporary;
+	parms.volumeParam.ioNamePtr = (StringPtr)temporary;
 	parms.volumeParam.ioVRefNum = file->vRefNum;
 	
 	error = PBHGetVInfo(&parms, FALSE);
@@ -106,7 +110,7 @@ boolean get_recording_filedesc(
 	if(!error)
 	{
 		getpstr(temporary, strFILENAMES, filenameMARATHON_RECORDING);
-		error= FSMakeFSSpec(vRef, parID, temporary, (FSSpec *) file);
+		error= FSMakeFSSpec(vRef, parID, (StringPtr)temporary, (FSSpec *) file);
 	}
 	
 	return (error==noErr);
@@ -119,8 +123,8 @@ void move_replay(
 	StandardFileReply reply;
 	
 	getpstr(temporary, strPROMPTS, _save_replay_prompt);
-	getpstr(suggested_name, strFILENAMES, filenameMARATHON_RECORDING);
-	StandardPutFile(temporary, suggested_name, &reply);
+	getpstr((char *)suggested_name, strFILENAMES, filenameMARATHON_RECORDING);
+	StandardPutFile((StringPtr)temporary, suggested_name, &reply);
 	if(reply.sfGood)
 	{
 		FSSpec source_spec;
@@ -145,6 +149,54 @@ void move_replay(
 	return;
 }
 
+#ifdef SUPPORT_INPUT_SPROCKET
+
+//
+//
+// ReadButton
+//
+// return true if button is down or if it has been clicked and released
+//
+//
+
+static UInt32 ReadButton(ISpElementReference button)
+{
+	UInt32 button_state;			// state of button
+	OSStatus err;					// error code
+	UInt32 timeout = 10;			// only get this many events
+	ISpElementEvent event;			// our event structure
+	Boolean wasEvent;				// was there an event
+	
+	err = ISpElement_GetSimpleState(button, &button_state);
+	
+	if (err)
+	{
+		ISpElement_Flush(button);
+		return kISpButtonUp;
+	}
+	
+	while(timeout > 0)
+	{
+		// get an event
+		err = ISpElement_GetNextEvent(button, sizeof(ISpElementEvent), &event, &wasEvent);
+		
+		if (err != noErr) { return kISpButtonUp; }		// got an error call that a button up
+		if (!wasEvent) { break; }						// no event break out of the loop
+
+		if (event.data == kISpButtonDown)				// if down mark the button as down and flush
+		{
+			button_state = kISpButtonDown;
+			ISpElement_Flush(button);					// flush any remaining events from this element
+			break;										// exit out of the loop
+		}
+		
+		timeout--;										// decrease our timeout
+	}
+
+	return button_state;								// return our state
+}
+#endif
+
 long parse_keymap(
 	void)
 {
@@ -153,13 +205,33 @@ long parse_keymap(
 	KeyMap key_map;
 	struct key_definition *key= current_key_definitions;
 	struct special_flag_data *special= special_flags;
+	long old_action_key;
 	
-	GetKeys(&key_map);
+	GetKeys(key_map);
 
-	/* parse the keymap */	
-	for (i=0;i<NUMBER_OF_STANDARD_KEY_DEFINITIONS;++i,++key)
+#ifdef SUPPORT_INPUT_SPROCKET
+	if (use_input_sprocket)
 	{
-		if (*((byte*)key_map + key->offset) & key->mask) flags|= key->action_flag;
+		for (i= 0; i<NUMBER_OF_INPUT_SPROCKET_NEEDS; i++)
+		{
+			unsigned int key_state= 0;
+			int needs_to_flags = input_sprocket_needs_to_flags[i];
+			
+			if (needs_to_flags != 0)
+			{
+				key_state = ReadButton(input_sprocket_elements[i]);
+				if (key_state) { flags |= needs_to_flags; }
+			}
+		}
+	}
+	else
+#endif
+	{
+		/* parse the keymap */	
+		for (i=0;i<NUMBER_OF_STANDARD_KEY_DEFINITIONS;++i,++key)
+		{
+			if (*((byte*)key_map + key->offset) & key->mask) flags|= key->action_flag;
+		}
 	}
 
 	/* post-process the keymap */
@@ -207,7 +279,9 @@ long parse_keymap(
 		flags= mask_in_absolute_positioning_information(flags, delta_yaw, delta_pitch, delta_velocity);
 	}
 
-	if(player_in_terminal_mode(local_player_index))
+	/* this is fighting with input sprocket in some strange way */
+	
+	if (player_in_terminal_mode(local_player_index))
 	{
 		flags= build_terminal_action_flags((char *) key_map);
 	}
@@ -246,7 +320,7 @@ static OSErr copy_file(
 					GetFPos(source_refnum, &total_length);
 					SetFPos(source_refnum, fsFromStart, 0l);
 					
-					data= malloc(COPY_BUFFER_SIZE);
+					data= (Ptr)malloc(COPY_BUFFER_SIZE);
 					if(data)
 					{
 						long running_length= total_length;

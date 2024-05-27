@@ -177,9 +177,9 @@ static struct key_definition powerbook_key_definitions[]=
 
 static struct key_definition *all_key_definitions[NUMBER_OF_KEY_SETUPS]=
 {
-	&standard_key_definitions,
-	&left_handed_key_definitions,
-	&powerbook_key_definitions
+	standard_key_definitions,
+	left_handed_key_definitions,
+	powerbook_key_definitions
 };
 
 /* Externed because both vbl.c and vbl_macintosh.c use this. */

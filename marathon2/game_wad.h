@@ -26,7 +26,6 @@ boolean process_map_wad(struct wad_data *wad, boolean restoring_game, short vers
 
 /* Final three calls, must be in this order! */
 void recalculate_redundant_map(void);
-void scan_and_add_platforms(struct static_platform_data *platform_static_data, short count);
 void complete_loading_level(short *map_indexes, short map_index_count, 
 	struct static_platform_data *platform_data, short platform_data_count,
 	struct platform_data *actual_platform_data, short actual_platform_data_count, short version);
@@ -43,7 +42,7 @@ boolean match_checksum_with_map(short vRefNum, long dirID, unsigned long checksu
 void set_map_file(FileDesc *file);
 
 /* --------- from PREPROCESS_MAP_MAC.C */
-void get_default_map_spec(FileDesc *new);
-void get_default_physics_spec(FileDesc *new);
+void get_default_map_spec(FileDesc *new_file);
+void get_default_physics_spec(FileDesc *new_file);
 
 void add_finishing_touches_to_save_file(FileDesc *file);

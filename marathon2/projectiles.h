@@ -1,3 +1,6 @@
+#ifndef __PROJECTILES_H__
+#define __PROJECTILES_H__
+
 /*
 PROJECTILES.H
 Tuesday, June 28, 1994 7:12:00 PM
@@ -24,7 +27,7 @@ enum /* projectile types */
 	_projectile_fusion_bolt_major,
 	_projectile_hunter,
 	_projectile_fist,
-	_projectile_armageddon_sphere,
+	_projectile_unused,
 	_projectile_armageddon_electricity,
 	_projectile_juggernaut_rocket,
 	_projectile_trooper_bullet,
@@ -47,6 +50,7 @@ enum /* projectile types */
 	_projectile_yeti,
 	_projectile_sewage_yeti,
 	_projectile_lava_yeti,
+	_projectile_smg_bullet,
 	NUMBER_OF_PROJECTILE_TYPES
 };
 
@@ -56,6 +60,9 @@ enum /* projectile types */
 /* only used for persistent projectiles */
 #define PROJECTILE_HAS_CAUSED_DAMAGE(p) ((p)->flags&(word)0x2000)
 #define SET_PROJECTILE_DAMAGE_STATUS(p,v) ((v)?((p)->flags|=(word)0x2000):((p)->flags&=(word)~0x2000))
+
+#define PROJECTILE_HAS_CROSSED_MEDIA_BOUNDARY(p) ((p)->flags&(word)0x1000)
+#define SET_PROJECTILE_CROSSED_MEDIA_BOUNDARY_STATUS(p,v) ((v)?((p)->flags|=(word)0x1000):((p)->flags&=(word)~0x1000))
 
 /* uses SLOT_IS_USED(), SLOT_IS_FREE(), MARK_SLOT_AS_FREE(), MARK_SLOT_AS_USED() macros (0x8000 bit) */
 
@@ -118,4 +125,6 @@ void drop_the_ball(world_point3d *origin, short polygon_index, short owner_index
 struct projectile_data *get_projectile_data(short projectile_index);
 #else
 #define get_projectile_data(i) (projectiles+(i))
+#endif
+
 #endif

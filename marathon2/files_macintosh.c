@@ -47,8 +47,9 @@ fileref open_file_for_reading(
 	error= FSpOpenDF((FSSpec *)file, fsRdPerm, &file_id);
 	if (error) 
 	{
+#ifdef BETA
 		dprintf("HOpen('%P', #%d, #%d)==#%d;g;", file->name, file->vRefNum, file->parID, error);
-
+#endif
 		file_id= NONE;
 		set_game_error(systemError, error);
 	}
@@ -67,8 +68,9 @@ fileref open_file_for_writing(
 	error= FSpOpenDF((FSSpec *)file, fsWrPerm, &file_id);
 	if (error) 
 	{
+#ifdef BETA
 		dprintf("HOpen('%P', #%d, #%d)==#%d;g;", file->name, file->vRefNum, file->parID, error);
-
+#endif
 		file_id= NONE;
 		set_game_error(systemError, error);
 	}
@@ -224,7 +226,7 @@ FileError add_application_name_to_fsspec(
 		err= PtrToHand(pascal_name, &resource, pascal_name[0]+1);
 		assert(!err && resource);
 								
-		AddResource(resource, 'STR ', -16396, "");
+		AddResource(resource, 'STR ', -16396, (StringPtr)"");
 		ReleaseResource(resource);
 					
 		CloseResFile(refnum);

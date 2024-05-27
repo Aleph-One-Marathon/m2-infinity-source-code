@@ -77,5 +77,8 @@ struct item_definition item_definitions[]=
 	{_ball, 37, 37, BUILD_DESCRIPTOR(BUILD_COLLECTION(_collection_player, 4), 29), 1, _environment_single_player},
 	{_ball, 38, 38, BUILD_DESCRIPTOR(BUILD_COLLECTION(_collection_player, 5), 29), 1, _environment_single_player},
 	{_ball, 39, 39, BUILD_DESCRIPTOR(BUILD_COLLECTION(_collection_player, 6), 29), 1, _environment_single_player},
-	{_ball, 40, 40, BUILD_DESCRIPTOR(BUILD_COLLECTION(_collection_player, 7), 29), 1, _environment_single_player}
+	{_ball, 40, 40, BUILD_DESCRIPTOR(BUILD_COLLECTION(_collection_player, 7), 29), 1, _environment_single_player},
+
+	{_weapon, 41, 41, BUILD_DESCRIPTOR(_collection_items, 25), 1, 0},
+	{_ammunition, 42, 43, BUILD_DESCRIPTOR(_collection_items, 24), 8, 0},
 };

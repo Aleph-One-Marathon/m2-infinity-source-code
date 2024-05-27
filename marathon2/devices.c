@@ -23,7 +23,7 @@ Wednesday, June 21, 1995 8:31:57 AM  (Jason)
 #include "interface.h"
 #include "player.h"
 #include "platforms.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "computer_interface.h"
 //#include "music.h"
 #include "lightsource.h"
@@ -65,7 +65,7 @@ enum // control panel sounds
 
 struct control_panel_definition
 {
-	short class;
+	short panel_class;
 	word flags;
 	
 	short collection;
@@ -120,7 +120,7 @@ static struct control_panel_definition control_panel_definitions[]=
 	{_panel_is_tag_switch, 0, _collection_walls3, 0, 1, {_snd_chip_insertion, NONE, NONE}, FIXED_ONE, _i_uplink_chip},
 	{_panel_is_tag_switch, 0, _collection_walls3, 1, 0, {_snd_destroy_control_panel, NONE, NONE}, FIXED_ONE, NONE},
 
-	// _collection_walls4
+	// _collection_walls5
 	{_panel_is_shield_refuel, 0, _collection_walls5, 2, 3, {_snd_energy_refuel, NONE, NONE}, FIXED_ONE, NONE},
 	{_panel_is_double_shield_refuel, 0, _collection_walls5, 2, 3, {_snd_energy_refuel, NONE, NONE}, FIXED_ONE+FIXED_ONE/8, NONE},
 	{_panel_is_triple_shield_refuel, 0, _collection_walls5, 2, 3, {_snd_energy_refuel, NONE, NONE}, FIXED_ONE+FIXED_ONE/4, NONE},
@@ -132,6 +132,19 @@ static struct control_panel_definition control_panel_definitions[]=
 	{_panel_is_oxygen_refuel, 0, _collection_walls5, 2, 3, {_snd_oxygen_refuel, NONE, NONE}, FIXED_ONE, NONE},
 	{_panel_is_tag_switch, 0, _collection_walls5, 0, 1, {_snd_chip_insertion, NONE, NONE}, FIXED_ONE, _i_uplink_chip},
 	{_panel_is_tag_switch, 0, _collection_walls5, 1, 0, {_snd_destroy_control_panel, NONE, NONE}, FIXED_ONE, NONE},
+
+	// _collection_walls4
+	{_panel_is_shield_refuel, 0, _collection_walls4, 2, 3, {_snd_energy_refuel, NONE, NONE}, FIXED_ONE, NONE},
+	{_panel_is_double_shield_refuel, 0, _collection_walls4, 2, 3, {_snd_energy_refuel, NONE, NONE}, FIXED_ONE+FIXED_ONE/8, NONE},
+	{_panel_is_triple_shield_refuel, 0, _collection_walls4, 2, 3, {_snd_energy_refuel, NONE, NONE}, FIXED_ONE+FIXED_ONE/4, NONE},
+	{_panel_is_light_switch, 0, _collection_walls4, 0, 1, {_snd_switch_on, _snd_switch_off, _snd_cant_toggle_switch}, FIXED_ONE, NONE},
+	{_panel_is_platform_switch, 0, _collection_walls4, 0, 1, {_snd_switch_on, _snd_switch_off, _snd_cant_toggle_switch}, FIXED_ONE, NONE},
+	{_panel_is_tag_switch, 0, _collection_walls4, 0, 1, {_snd_switch_on, _snd_switch_off, _snd_cant_toggle_switch}, FIXED_ONE, NONE},
+	{_panel_is_pattern_buffer, 0, _collection_walls4, 4, 4, {_snd_pattern_buffer, NONE, NONE}, FIXED_ONE, NONE},
+	{_panel_is_computer_terminal, 0, _collection_walls4, 4, 4, {NONE, NONE, NONE}, FIXED_ONE, NONE},
+	{_panel_is_oxygen_refuel, 0, _collection_walls4, 2, 3, {_snd_oxygen_refuel, NONE, NONE}, FIXED_ONE, NONE},
+	{_panel_is_tag_switch, 0, _collection_walls4, 0, 1, {_snd_chip_insertion, NONE, NONE}, FIXED_ONE, _i_uplink_chip},
+	{_panel_is_tag_switch, 0, _collection_walls4, 1, 0, {_snd_destroy_control_panel, NONE, NONE}, FIXED_ONE, NONE},
 };
 
 /* ------------ private prototypes */
@@ -171,7 +184,7 @@ void initialize_control_panels_for_level(
 			struct control_panel_definition *definition= get_control_panel_definition(side->control_panel_type);
 			boolean status= FALSE;
 			
-			switch (definition->class)
+			switch (definition->panel_class)
 			{
 				case _panel_is_tag_switch:
 					status= GET_CONTROL_PANEL_STATUS(side);
@@ -216,7 +229,7 @@ void update_control_panels(
 				player->variables.last_position.y == player->variables.position.y &&
 				player->variables.last_position.z == player->variables.position.z)
 			{
-				switch (definition->class)
+				switch (definition->panel_class)
 				{
 					case _panel_is_oxygen_refuel:
 						if (!(dynamic_world->tick_count&OXYGEN_RECHARGE_FREQUENCY))
@@ -237,7 +250,7 @@ void update_control_panels(
 						{
 							short maximum, rate;
 							
-							switch (definition->class)
+							switch (definition->panel_class)
 							{
 								case _panel_is_shield_refuel: maximum= PLAYER_MAXIMUM_SUIT_ENERGY, rate= 1; break;
 								case _panel_is_double_shield_refuel: maximum= 2*PLAYER_MAXIMUM_SUIT_ENERGY, rate= 2; break;
@@ -319,7 +332,7 @@ boolean untoggled_repair_switches_on_level(
 		{
 			struct control_panel_definition *definition= get_control_panel_definition(side->control_panel_type);
 			
-			switch (definition->class)
+			switch (definition->panel_class)
 			{
 				case _panel_is_platform_switch:
 					untoggled_switch= platform_is_at_initial_state(get_polygon_data(side->control_panel_permutation)->permutation) ? TRUE : FALSE;
@@ -349,7 +362,7 @@ void assume_correct_switch_position(
 		{
 			struct control_panel_definition *definition= get_control_panel_definition(side->control_panel_type);
 			
-			if (switch_type==definition->class)
+			if (switch_type==definition->panel_class)
 			{
 				play_control_panel_sound(side_index, new_state ? _activating_sound : _deactivating_sound);
 				SET_CONTROL_PANEL_STATUS(side, new_state);
@@ -380,7 +393,7 @@ void try_and_toggle_control_panel(
 				boolean make_sound, state= GET_CONTROL_PANEL_STATUS(side);
 				struct control_panel_definition *definition= get_control_panel_definition(side->control_panel_type);
 				
-				switch (definition->class)
+				switch (definition->panel_class)
 				{
 					case _panel_is_tag_switch:
 						state= !state;
@@ -441,9 +454,38 @@ short get_panel_class(
 {
 	struct control_panel_definition *definition= get_control_panel_definition(panel_type);
 	
-	return definition->class;
+	return definition->panel_class;
 }
 
+//---------- changed 9.18.95
+#if 0
+boolean control_panel_type_valid_for_texture(
+	shape_descriptor shape,
+	short control_panel_type)
+{
+	boolean valid= FALSE;
+	short index;
+	
+	for(index= 0; index<NUMBER_OF_CONTROL_PANEL_DEFINITIONS; ++index)
+	{
+		struct control_panel_definition *definition= get_control_panel_definition(index);
+			
+		if(GET_DESCRIPTOR_COLLECTION(shape)==definition->collection)
+		{
+			if((GET_DESCRIPTOR_SHAPE(shape)==definition->active_shape) ||
+				(GET_DESCRIPTOR_SHAPE(shape)==definition->inactive_shape))
+			{
+				if(control_panel_type==definition->panel_class)
+				{
+					valid= TRUE;
+				}
+			}
+		}
+	}
+	
+	return valid;
+}
+#endif
 //---------- changed 9.18.95
 boolean control_panel_type_valid_for_texture(
 	shape_descriptor shape,
@@ -463,6 +505,7 @@ boolean control_panel_type_valid_for_texture(
 	
 	return valid;
 }
+
 //------------------
 
 /* ---------- private code */
@@ -615,23 +658,27 @@ static void	change_panel_state(
 	state= GET_CONTROL_PANEL_STATUS(side);
 	
 	/* Do the right thing, based on the panel type.. */
-	switch (definition->class)
+	switch (definition->panel_class)
 	{
 		case _panel_is_oxygen_refuel:
 		case _panel_is_shield_refuel:
 		case _panel_is_double_shield_refuel:
 		case _panel_is_triple_shield_refuel:
+#ifndef VULCAN
 			player->control_panel_side_index= player->control_panel_side_index==panel_side_index ? NONE : panel_side_index;
 			state= get_recharge_status(panel_side_index);
 			SET_CONTROL_PANEL_STATUS(side, state);
 			if (!state) set_control_panel_texture(side);
+#endif
 			break;
 		case _panel_is_computer_terminal:
+#ifndef VULCAN
 			if (get_game_state()==_game_in_progress && !PLAYER_HAS_CHEATED(player) && !PLAYER_HAS_MAP_OPEN(player))
 			{
 				/* this will handle changing levels, if necessary (i.e., if we’re finished) */
 				enter_computer_interface(player_index, side->control_panel_permutation, calculate_level_completion_state());
 			}
+#endif
 			break;
 		case _panel_is_tag_switch:
 			if (definition->item==NONE || (!state && try_and_subtract_player_item(player_index, definition->item)))
@@ -656,6 +703,7 @@ static void	change_panel_state(
 			make_sound= try_and_change_platform_state(get_polygon_data(side->control_panel_permutation)->permutation, state);
 			break;
 		case _panel_is_pattern_buffer:
+#ifndef VULCAN
 			if (dynamic_world->tick_count-player->ticks_at_last_successful_save>MINIMUM_RESAVE_TICKS &&
 				player_controlling_game() && !PLAYER_HAS_CHEATED(local_player) && !game_is_networked)
 			{
@@ -666,10 +714,12 @@ static void	change_panel_state(
 				player->ticks_at_last_successful_save= dynamic_world->tick_count;
 				if (!save_game()) 
 				{
-					player->ticks_at_last_successful_save= 0;
+					// AMR 3/12/97 vidding happens with InputSprocket with this here
+					//player->ticks_at_last_successful_save= 0;
 				}
 //				fade_in_background_music(30);
 			}
+#endif
 			break;
 
 		default:

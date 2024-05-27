@@ -1,0 +1,61 @@
+* ------------- GENERATE DEBUGGER SYMBOL INFORMATION -------------
+* This Macro will generate information for the debugger to read and display
+* as its module name.  This aids in debugging Asm code while looking at it
+* in the debugger.  This macro can only work if called at the end of stack
+* frame.  The appearance of the Macro statement in the source code must occur
+* immediately after the final "JMP   (A0)" or "RTS" instruction following the UNLINK.
+* Spaces may be included in the name, but no quotes are allowed.
+
+*  {Form #1}	DbgInfo		ModName
+*  {Form #2}	DbgInfo.New	Really Long Module Name For MacsBug 6.0
+
+* There are now two naming conventions used in MacsBug, Form #1 is the older MacsBug,
+* or TMON, and Form #2 is the newer MacsBug 6.0.  The older method would only
+* allow for a fixed length of eight characters.  If a shorter name is passed to
+* this Macro, it will extend the length to 8 chars with trailing spaces.
+* MacsBug 6.0 will now allow for a variable length C type string. This Macro will
+* create the proper DC statements and takes into account word alignment issues.
+
+
+		MACRO
+		symbol	 	&ModName#,&SizeOfLiterals#:INT
+		PRINT		Push,NoMDir 	; Only list generated code
+		LCLC		&DbgName#	; name to generate for MacsBug
+		LCLC		&DbgTemp	; temporary name variable
+		LCLC		&S		; variable used to save PRINT state
+
+ IF DEBUG THEN						; do we want debugging info?
+    IF &ModName# ≠ '' THEN					; did we get a module name?
+
+.* Create the new MacsBug naming convention
+* -----------------------------------------------
+	   &DbgTemp: SETC	&ModName#			; generate new type symbols
+	   IF &Len(&ModName#) < 32 THEN				; if module name < 32 chars
+		IF &Len(&ModName#) // 2 = 0 THEN 		; add space if even so that...
+		   &DbgTemp: SETC &Concat(&ModName#,' ') 	; string length plus length byte...
+		ENDIF						; will align to word boundary
+	   &DbgName#: SETC &Concat(&Chr($80 + &Len(&ModName#)), &DbgTemp)
+	   ELSE							; Length > 32 characters
+		IF &Len(&ModName#) // 2 = 1 THEN 		; add space if length is odd
+		   &DbgTemp: SETC &Concat(&ModName#,' ')
+		ENDIF
+	   &DbgName#: SETC &Concat(&Chr($80), &Chr(&Len(&ModName#)), &DbgTemp)
+	   ENDIF
+
+.* Create the DC.B with the debugger name, and include the NULs if new MacsBug option
+* -----------------------------------------------
+	&S: SETC &Setting('STRING')		; preserve STRING status
+	IF &S ≠ 'ASIS' THEN			; only change it if not already ASIS
+	   STRING    ASIS
+	   DC.B      '&DbgName#'
+		DC.W		&SizeOfLiterals#
+	   STRING    &S
+	ELSE
+	   DC.B      '&DbgName#'
+		DC.W		&SizeOfLiterals#
+	ENDIF
+   ENDIF
+ ENDIF
+
+		PRINT	Pop 			; restore original print status
+		ENDM

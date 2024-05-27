@@ -19,7 +19,7 @@ Thursday, July 6, 1995 4:53:52 PM
 #include "player.h"
 #include "monsters.h"
 #include "interface.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "fades.h"
 #include "media.h"
 #include "items.h"
@@ -28,6 +28,7 @@ Thursday, July 6, 1995 4:53:52 PM
 #include "computer_interface.h"
 #include "projectiles.h"
 #include "network_games.h"
+#include "screen.h"
 
 /*
 //anybody on the receiving pad of a teleport should explode (what happens to invincible guys?)
@@ -109,9 +110,9 @@ static struct player_shape_definitions player_shapes=
 	9, 8, /* dying hard, dying soft */
 	11, 10, /* dead hard, dead soft */
 	{7, 0, 0, 24, 23}, /* legs: stationary, walking, running, sliding, airborne */
-	{1, 3, 20, 26, 14, 12, 31, 16, 28, 5, 18}, /* idle torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, da ball */
-	{1, 3, 21, 26, 14, 12, 31, 16, 28, 5, 18}, /* charging torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, ball */
-	{2, 4, 22, 27, 15, 13, 32, 17, 28, 6, 19}, /* firing torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, ball */
+	{1, 3, 20, 26, 14, 12, 31, 16, 28, 33, 5, 18}, /* idle torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, da ball */
+	{1, 3, 21, 26, 14, 12, 31, 16, 28, 33, 5, 18}, /* charging torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, ball */
+	{2, 4, 22, 27, 15, 13, 32, 17, 28, 34, 6, 19}, /* firing torsos: fists, magnum, fusion, assault, rocket, flamethrower, alien, shotgun, double pistol, double shotgun, ball */
 };
 
 #define NUMBER_OF_PLAYER_INITIAL_ITEMS (sizeof(player_initial_items)/sizeof(short))
@@ -245,7 +246,7 @@ short new_player(
 	/* Mark the player's inventory as dirty */
 	mark_player_inventory_as_dirty(player_index, NONE);
 	initialize_player_weapons(player_index);
-	
+
 	/* give the player his initial items */
 	give_player_initial_items(player_index);
 	try_and_strip_player_items(player_index);
@@ -956,7 +957,7 @@ static void update_player_teleport(
 					initialize_player_physics_variables(player_index);
 				} else { /* -level number is the interlevel */
  					short level_number= -player->teleporting_destination;
-					
+
 					if(level_number==EPILOGUE_LEVEL_NUMBER)
 					{
 						/* Should this do something sly in cooperative play? */

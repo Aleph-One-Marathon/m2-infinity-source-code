@@ -20,7 +20,7 @@ Wednesday, October 11, 1995 3:10:34 PM  (Jason)
 #include "interface.h"
 #include "monsters.h"
 #include "player.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "platforms.h"
 #include "fades.h"
 #include "items.h"
@@ -102,7 +102,14 @@ short new_item(
 				SET_OBJECT_INVISIBILITY(object, TRUE);
 				object->permutation= NONE;
 			}
-			
+#if 1			
+			else if ((get_item_kind(type)==_ball) && !static_world->ball_in_play)
+			{
+				static_world->ball_in_play= TRUE;
+				play_local_sound(_snd_got_ball);
+			}
+#endif
+
 			/* let PLACEMENT.C keep track of how many there are */
 			object_was_just_added(_object_is_item, type);
  		}

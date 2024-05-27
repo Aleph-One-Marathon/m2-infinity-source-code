@@ -88,6 +88,9 @@ extern WindowPtr screen_window;
 #pragma options align=power
 #endif
 
+boolean has_ambiguous_flags= FALSE;
+boolean exceeded_max_node_aliases= FALSE;
+
 /*
 //render transparent walls (if a bit is set or if the transparent texture is non-NULL?)
 //use side lightsources instead of taking them from their polygons
@@ -161,7 +164,7 @@ struct vertical_surface_data
 
 #define MAXIMUM_LINE_CLIPS 256
 #define MAXIMUM_ENDPOINT_CLIPS 64
-#define MAXIMUM_CLIPPING_WINDOWS 128
+#define MAXIMUM_CLIPPING_WINDOWS 256
 
 enum /* …_clip_data flags */
 {
@@ -428,18 +431,18 @@ void allocate_render_memory(
 	render_objects= (struct render_object_data *) malloc(sizeof(struct render_object_data)*MAXIMUM_RENDER_OBJECTS);
 	assert(render_objects);
 
-	endpoint_clips= malloc(MAXIMUM_ENDPOINT_CLIPS*sizeof(struct endpoint_clip_data));
+	endpoint_clips= (struct endpoint_clip_data *)malloc(MAXIMUM_ENDPOINT_CLIPS*sizeof(struct endpoint_clip_data));
 	assert(endpoint_clips);
 
-	line_clips= malloc(MAXIMUM_LINE_CLIPS*sizeof(struct line_clip_data));
-	line_clip_indexes= malloc(MAXIMUM_LINES_PER_MAP*sizeof(short));
+	line_clips= (struct line_clip_data *)malloc(MAXIMUM_LINE_CLIPS*sizeof(struct line_clip_data));
+	line_clip_indexes= (short *)malloc(MAXIMUM_LINES_PER_MAP*sizeof(short));
 	assert(line_clips&&line_clip_indexes);
 
-	clipping_windows= malloc(MAXIMUM_CLIPPING_WINDOWS*sizeof(struct clipping_window_data));
+	clipping_windows= (struct clipping_window_data *)malloc(MAXIMUM_CLIPPING_WINDOWS*sizeof(struct clipping_window_data));
 	assert(clipping_windows);
 
-	endpoint_x_coordinates= malloc(MAXIMUM_ENDPOINTS_PER_MAP*sizeof(short));
-	polygon_index_to_sorted_node= malloc(MAXIMUM_POLYGONS_PER_MAP*sizeof(struct sorted_node *));
+	endpoint_x_coordinates= (short *)malloc(MAXIMUM_ENDPOINTS_PER_MAP*sizeof(short));
+	polygon_index_to_sorted_node= (struct sorted_node_data **)malloc(MAXIMUM_POLYGONS_PER_MAP*sizeof(struct sorted_node *));
 	assert(endpoint_x_coordinates&&polygon_index_to_sorted_node);
 
 	return;
@@ -1144,13 +1147,16 @@ static void sort_render_tree(
 						break;
 					}
 				}
-#ifdef DEBUG
 				else
 				{
-					dprintf("exceeded MAXIMUM_NODE_ALIASES; this sucks, Beavis.");
+#ifdef VULCAN
+					exceeded_max_node_aliases= TRUE;
+#else
+					dprintf("exceeded MAXIMUM_NODE_ALIASES (#%d), remove some transparent walls.", MAXIMUM_NODE_ALIASES);
+#endif
+					
 					return;
 				}
-#endif
 			}
 		}
 		
@@ -2387,7 +2393,11 @@ static void render_node_floor_or_ceiling(
 					case _clip_left: screen->x= window->x0; break;
 					case _clip_right: screen->x= window->x1; break;
 					default:
+#ifdef VULCAN
+						if (window->x1-window->x0>1) has_ambiguous_flags= TRUE;
+#else
 						if (window->x1-window->x0>1) dprintf("ambiguous clip flags for window [%d,%d];g;", window->x0, window->x1);
+#endif
 						screen->x= window->x0;
 						break;
 				}
@@ -2401,7 +2411,11 @@ static void render_node_floor_or_ceiling(
 					case _clip_up: screen->y= window->y0; break;
 					case _clip_down: screen->y= window->y1; break;
 					default:
-						if (window->y1-window->y0>1) dprintf("ambiguous clip flags for window [%d,%d];g;", window->y0, window->y1);
+#ifdef VULCAN
+						if (window->y1-window->y0>1) has_ambiguous_flags= TRUE;
+#else
+						if (window->y1-window->y0>1) dprintf("ambiguous clip flags for window [%d,%d];g;", window->x0, window->x1);
+#endif
 						screen->y= window->y0;
 						break;
 				}
@@ -2501,7 +2515,11 @@ static void render_node_side(
 						case _clip_left: screen->x= window->x0; break;
 						case _clip_right: screen->x= window->x1; break;
 						default:
+#ifdef VULCAN
+							if (window->x1-window->x0>1) has_ambiguous_flags= TRUE;
+#else
 							if (window->x1-window->x0>1) dprintf("ambiguous clip flags for window [%d,%d];g;", window->x0, window->x1);
+#endif
 							screen->x= window->x0;
 							break;
 					}
@@ -2515,7 +2533,11 @@ static void render_node_side(
 						case _clip_up: screen->y= window->y0; break;
 						case _clip_down: screen->y= window->y1; break;
 						default:
-							if (window->y1-window->y0>1) dprintf("ambiguous clip flags for window [%d,%d];g;", window->y0, window->y1);
+#ifdef VULCAN
+							if (window->y1-window->y0>1) has_ambiguous_flags= TRUE;
+#else
+							if (window->y1-window->y0>1) dprintf("ambiguous clip flags for window [%d,%d];g;", window->x0, window->x1);
+#endif
 							screen->y= window->y0;
 							break;
 					}

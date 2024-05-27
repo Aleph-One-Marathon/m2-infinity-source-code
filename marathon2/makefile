@@ -17,7 +17,7 @@
 # --------------------------------------------------------------------------------------
 
 # creator type
-Creator= 52.4
+Creator= '26.∞'
 
 # every source file should depend on {UbiqDependencies}
 UbiqDependencies= makefile buildprogram
@@ -40,10 +40,10 @@ Source= :
 
 Environment68k= -d env68k
 
-Standard68kLibraries= "{Libraries}Runtime.o" "{Libraries}Interface.o" "{CLibraries}StdCLib.o" ∂
-	"{CLibraries}CSANELib.o" "{CLibraries}Math.o"
-Standard68kLibraries881= "{CLibraries}CLib881.o" "{Libraries}Runtime.o" "{Libraries}Interface.o" ∂
-	"{CLibraries}StdCLib.o" "{CLibraries}CSANELib881.o" "{CLibraries}Math881.o"
+Standard68kLibraries= "{Libraries}MacRuntime.o" "{Libraries}Interface.o" "{CLibraries}StdCLib.o" ∂
+	"{CLibraries}CSANELib.o" "{Libraries}IntEnv.o" "{CLibraries}Math.o" "{Libraries}MathLib.o"
+Standard68kLibraries881= "{CLibraries}CLib881.o" "{Libraries}MacRuntime.o" "{Libraries}Interface.o" ∂
+	"{CLibraries}StdCLib.o" "{CLibraries}CSANELib881.o" "{Libraries}IntEnv.o" "{CLibraries}Math881.o" "{Libraries}MathLib881.o"
 
 COptions881= -i "{CSeriesInterfaces}" {VersionCOptions} -opt full -b2 -r -mc68020 -k "{CSeriesLibraries}" -mc68881 -elems881
 COptions= -i "{CSeriesInterfaces}" {VersionCOptions} -opt full -b2 -r -mc68020 -k "{CSeriesLibraries}"
@@ -72,20 +72,30 @@ AOptions= -i "{CSeriesInterfaces}" -case object {VersionAsmOptions}
 
 EnvironmentPPC= -d envppc
 
-StandardPPCLibraries= "{PPCLibraries}InterfaceLib.xcoff" "{PPCLibraries}MathLib.xcoff" ∂
-	"{PPCLibraries}PPCCRuntime.o" "{PPCLibraries}StdCLib.xcoff" "{PPCLibraries}StdCRuntime.o" ∂
-	"{PPCLibraries}QuickTimeLib.xcoff"
+StandardPPCLibraries= "{SharedLibraries}InterfaceLib" "{SharedLibraries}MathLib" ∂
+	"{PPCLibraries}PPCCRuntime.o" "{SharedLibraries}StdCLib" "{PPCLibraries}StdCRuntime.o" ∂
+	"{SharedLibraries}QuickTimeLib" "{CSeriesLibraries}DisplayLib" {SprocketLibraries}
 
-PPCFinalLinkOptions= -weakLib QuickTimeLib -libRename InterfaceLib.xcoff=InterfaceLib -libRename StdCLib.xcoff=StdCLib -libRename MathLib.xcoff=MathLib -libRename QuickTimeLib.xcoff=QuickTimeLib
-PPCCOptions= -i "{CSeriesInterfaces}" {VersionPPCCOptions} -align mac68k -appleext on -dialect ansic -w conformance
+PPCFinalLinkOptions= -weakLib QuickTimeLib {SprocketPPCFinalLinkOptions}
+PPCCOptions= -i "{CSeriesInterfaces}" {VersionPPCCOptions} -align mac68k -typecheck relaxed
 
 # --------------------------------------------------------------------------------------
 # PPC DEFAULT DEPENDENCY RULES
 # --------------------------------------------------------------------------------------
 
+# ••• Special case for MrC 2.0d5c2 bug
+#{ObjPPC}keyboard_dialog.ppc.o ƒ keyboard_dialog.c
+#	MrC keyboard_dialog.c {PPCCOptions} -o "{ObjPPC}"keyboard_dialog.ppc.o -opt local
+	
+#{ObjPPC}game_sound.ppc.o ƒ game_sound.c
+#	MrC game_sound.c {PPCCOptions} -o "{ObjPPC}"game_sound.ppc.o -opt local
+	
+#{ObjPPC}sound_macintosh.ppc.o ƒ sound_macintosh.c
+#	MrC sound_macintosh.c {PPCCOptions} -o "{ObjPPC}"sound_macintosh.ppc.o -opt local
+
 # default dependency rule for .ppc.o files
 .ppc.o ƒ .c
-	PPCC {Default}.c {PPCCOptions} -o "{ObjPPC}"{Default}.ppc.o 
+	MrC {Default}.c {PPCCOptions} -o "{ObjPPC}"{Default}.ppc.o 
 
 # default dependency rule for .s.o files
 .s.o ƒ .s
@@ -125,7 +135,7 @@ PPCCOptions= -i "{CSeriesInterfaces}" {VersionPPCCOptions} -align mac68k -applee
 {Obj68k}files_macintosh.c.o ƒ portable_files.h game_errors.h tags.h {UbiqDependencies}
 
 #map library dependencies
-{Obj68k}map.c.o ƒ map.h world.h interface.h monsters.h projectiles.h effects.h player.h platforms.h sound.h lightsource.h media.h {UbiqDependencies}
+{Obj68k}map.c.o ƒ map.h world.h interface.h monsters.h projectiles.h effects.h player.h platforms.h game_sound.h lightsource.h media.h {UbiqDependencies}
 {Obj68k}map_constructors.c.o ƒ map.h world.h {UbiqDependencies}
 {Obj68k}map_accessors.c.o ƒ map.h world.h platforms.h {UbiqDependencies}
 {Obj68k}game_wad.c.o ƒ map.h world.h monsters.h network.h projectiles.h effects.h player.h ∂
@@ -135,11 +145,11 @@ PPCCOptions= -i "{CSeriesInterfaces}" {VersionPPCCOptions} -align mac68k -applee
 {Obj68k}flood_map.c.o ƒ map.h world.h flood_map.h {UbiqDependencies}
 {Obj68k}lightsource.c.o ƒ map.h world.h lightsource.h {UbiqDependencies}
 {Obj68k}media.c.o ƒ map.h world.h media.h media_definitions.h lightsource.h {UbiqDependencies}
-{Obj68k}platforms.c.o ƒ map.h world.h platforms.h platform_definitions.h lightsource.h sound.h {UbiqDependencies}
+{Obj68k}platforms.c.o ƒ map.h world.h platforms.h platform_definitions.h lightsource.h game_sound.h {UbiqDependencies}
 {Obj68k}placement.c.o ƒ map.h monsters.h {UbiqDependencies}
 
 #shell library dependencies
-{Obj68k}shell.c.o ƒ map.h world.h monsters.h player.h render.h shell.h interface.h sound.h ∂
+{Obj68k}shell.c.o ƒ map.h world.h monsters.h player.h render.h shell.h interface.h game_sound.h ∂
 	music.h fades.h tags.h network_sound.h mouse.h screen_drawing.h computer_interface.h ∂
 	game_wad.h game_window.h {UbiqDependencies}
 {Obj68k}shapes.c.o ƒ shell.h interface.h shapes_macintosh.c {UbiqDependencies}
@@ -147,21 +157,21 @@ PPCCOptions= -i "{CSeriesInterfaces}" {VersionPPCCOptions} -align mac68k -applee
 {Obj68k}screen.a.o ƒ {UbiqDependencies}
 {ObjPPC}valkyrie.c.o ƒ valkyrie.h textures.h {UbiqDependencies}
 {Obj68k}vbl_macintosh.c.o ƒ interface.h map.h world.h shell.h player.h mouse.h key_definitions.h {UbiqDependencies}
-{Obj68k}sound.c.o ƒ interface.h shell.h sound.h sound_definitions.h sound_macintosh.c {UbiqDependencies}
+{Obj68k}game_sound.c.o ƒ interface.h shell.h game_sound.h sound_definitions.h sound_macintosh.c {UbiqDependencies}
 {Obj68k}preprocess_map_mac.c.o ƒ map.h world.h ":editor code:editor.h" interface.h shell.h game_wad.h ∂
 	overhead_map.h player.h game_window.h tags.h wad.h {UbiqDependencies}
 {Obj68k}screen_drawing.c.o ƒ interface.h map.h shell.h screen_drawing.h {UbiqDependencies}
-{Obj68k}game_dialogs.c.o ƒ interface.h world.h shell.h music.h {UbiqDependencies}
+{Obj68k}game_dialogs.c.o ƒ interface.h world.h shell.h music.h serial_numbers.c {UbiqDependencies}
 {Obj68k}game_window_macintosh.c.o ƒ map.h world.h interface.h player.h screen_drawing.h motion_sensor.h ∂
-	sound.h items.h weapons.h game_window.h {UbiqDependencies}
+	game_sound.h items.h weapons.h game_window.h {UbiqDependencies}
 {Obj68k}interface_macintosh.c.o ƒ map.h macintosh_network.h shell.h interface.h player.h network_sound.h ∂
-	screen_drawing.h sound.h fades.h game_window.h game_errors.h {UbiqDependencies}
+	screen_drawing.h game_sound.h fades.h game_window.h game_errors.h {UbiqDependencies}
 {Obj68k}mouse.c.o ƒ mouse.h world.h player.h map.h {UbiqDependencies}
 {Obj68k}computer_interface.c.o ƒ screen_drawing.h computer_interface.h interface.h shell.h map.h overhead_map.h {UbiqDependencies}
 {Obj68k}music.c.o ƒ music.h shell.h {UbiqDependencies}
 {Obj68k}keyboard_dialog.c.o ƒ interface.h {UbiqDependencies}
 {Obj68k}images.c.o ƒ images.h interface.h map.h {UbiqDependencies}
-{Obj68k}preferences.c.o ƒ map.h world.h shell.h interface.h sound.h preferences.h ∂
+{Obj68k}preferences.c.o ƒ map.h world.h shell.h interface.h game_sound.h preferences.h ∂
 	wad.h wad_prefs.h tags.h {UbiqDependencies}
 
 #network library dependencies
@@ -183,25 +193,25 @@ PPCCOptions= -i "{CSeriesInterfaces}" {VersionPPCCOptions} -align mac68k -applee
 {Obj68k}{Application}.c.o ƒ map.h world.h render.h interface.h flood_map.h effects.h monsters.h projectiles.h player.h ∂
 	scottish_textures.h textures.h monsters.h projectiles.h effects.h flood_map.h player.h ∂
 	network.h scenery.h platforms.h lightsource.h media.h music.h fades.h items.h weapons.h game_window.h {UbiqDependencies}
-{Obj68k}player.c.o ƒ map.h world.h player.h monsters.h interface.h sound.h fades.h media.h items.h ∂
+{Obj68k}player.c.o ƒ map.h world.h player.h monsters.h interface.h game_sound.h fades.h media.h items.h ∂
 	weapons.h game_window.h {UbiqDependencies}
 {Obj68k}pathfinding.c.o ƒ map.h world.h flood_map.h {UbiqDependencies}
-{Obj68k}monsters.c.o ƒ monster_definitions.h render.h scottish_textures.h textures.h map.h world.h interface.h monsters.h projectiles.h effects.h player.h platforms.h sound.h {UbiqDependencies}
+{Obj68k}monsters.c.o ƒ monster_definitions.h render.h scottish_textures.h textures.h map.h world.h interface.h monsters.h projectiles.h effects.h player.h platforms.h game_sound.h {UbiqDependencies}
 {Obj68k}scenery.c.o ƒ scenery_definitions.h scenery.h map.h world.h {UbiqDependencies}
 {Obj68k}projectiles.c.o ƒ projectile_definitions.h render.h scottish_textures.h textures.h map.h world.h interface.h monsters.h projectiles.h effects.h media.h {UbiqDependencies}
 {Obj68k}effects.c.o ƒ effect_definitions.h render.h scottish_textures.h textures.h map.h world.h interface.h effects.h {UbiqDependencies}
-{Obj68k}devices.c.o ƒ map.h world.h monsters.h interface.h player.h platforms.h sound.h ∂
+{Obj68k}devices.c.o ƒ map.h world.h monsters.h interface.h player.h platforms.h game_sound.h ∂
 	computer_interface.h music.h lightsource.h game_window.h {UbiqDependencies}
-{Obj68k}weapons.c.o ƒ map.h world.h projectiles.h player.h weapons.h sound.h interface.h ∂
+{Obj68k}weapons.c.o ƒ map.h world.h projectiles.h player.h weapons.h game_sound.h interface.h ∂
 	items.h monsters.h game_window.h weapon_definitions.h {UbiqDependencies}
-{Obj68k}items.c.o ƒ map.h world.h interface.h monsters.h player.h sound.h platforms.h ∂
+{Obj68k}items.c.o ƒ map.h world.h interface.h monsters.h player.h game_sound.h platforms.h ∂
 	fades.h items.h flood_map.h effects.h game_window.h item_definitions.h weapons.h {UbiqDependencies}
 {Obj68k}physics.c.o ƒ physics_models.h render.h scottish_textures.h textures.h map.h world.h monsters.h player.h {UbiqDependencies}
 {Obj68k}vbl.c.o ƒ interface.h map.h world.h shell.h player.h mouse.h key_definitions.h {UbiqDependencies}
 {Obj68k}interface.c.o ƒ map.h macintosh_network.h shell.h interface.h player.h network_sound.h ∂
-	screen_drawing.h sound.h fades.h game_window.h game_errors.h {UbiqDependencies}
+	screen_drawing.h game_sound.h fades.h game_window.h game_errors.h {UbiqDependencies}
 {Obj68k}game_window.c.o ƒ map.h world.h interface.h player.h screen_drawing.h motion_sensor.h ∂
-	sound.h items.h weapons.h game_window.h {UbiqDependencies}
+	game_sound.h items.h weapons.h game_window.h {UbiqDependencies}
 {Obj68k}fades.c.o ƒ interface.h shell.h {UbiqDependencies}
 {Obj68k}import_definitions.c.o ƒ wad.h extensions.h shell.h {UbiqDependencies}
 
@@ -218,7 +228,7 @@ MapLibObjects68k= {Obj68k}map.c.o {Obj68k}lightsource.c.o {Obj68k}flood_map.c.o 
 	{Obj68k}platforms.c.o {Obj68k}map_accessors.c.o {Obj68k}map_constructors.c.o {Obj68k}game_wad.c.o {Obj68k}wad.c.o ∂
 	{Obj68k}placement.c.o
 ShellLibObjects68k= {Obj68k}shell.c.o {Obj68k}screen.c.o {Obj68k}valkyrie.c.o {Obj68k}screen.a.o ∂
-	{Obj68k}shapes.c.o {Obj68k}sound.c.o {Obj68k}preprocess_map_mac.c.o {Obj68k}game_dialogs.c.o ∂
+	{Obj68k}shapes.c.o {Obj68k}game_sound.c.o {Obj68k}preprocess_map_mac.c.o {Obj68k}game_dialogs.c.o ∂
 	{Obj68k}game_window_macintosh.c.o {Obj68k}interface_macintosh.c.o {Obj68k}vbl_macintosh.c.o ∂
 	{Obj68k}screen_drawing.c.o {Obj68k}mouse.c.o {Obj68k}computer_interface.c.o ∂
 	{Obj68k}music.c.o {Obj68k}preferences.c.o {Obj68k}keyboard_dialog.c.o {Obj68k}images.c.o
@@ -260,15 +270,15 @@ LinkDependencies68k= {ApplicationLibraries68k}
 {Targ68k} ƒƒ {RezDependencies68k}
 	Rez {Application}.r {Environment68k} {VerRezOptions} -append -o {Targ68k}
 {Targ68k} ƒƒ {LinkDependencies68k}
-	Link {Link68kOptions} -w -t APPL -c "{Creator}" {ApplicationLibraries68k} {Standard68kLibraries} -o {Targ68k} > link.out
+	Link {Link68kOptions} -w -t APPL -c {Creator} {ApplicationLibraries68k} {Standard68kLibraries} -o {Targ68k} > link.out
 {Targ68k} ƒƒ {Obj68k}network_listener.a.o
 	Link  -rt SOCK=128 -m TheSocketListener -sg "socket_listener" ∂
 		"{Obj68k}"network_listener.a.o -o {Targ68k}
 	SetFile -a iB {Targ68k}
-{Application} ƒƒ {RezDependencies68k} {LinkDependencies68k}
-	noresnames {Application}
-{Application}.gamma ƒƒ {RezDependencies68k} {LinkDependencies68k}
-	noresnames {Application}.gamma
+#{Application} ƒƒ {RezDependencies68k} {LinkDependencies68k}
+#	noresnames {Application}
+#{Application}.gamma ƒƒ {RezDependencies68k} {LinkDependencies68k}
+#	noresnames {Application}.gamma
 
 # --------------------------------------------------------------------------------------
 # 68K DEMO APPLICATION DEPENDENCIES AND BUILD COMMANDS
@@ -277,13 +287,13 @@ LinkDependencies68k= {ApplicationLibraries68k}
 {DemoTarg68k} ƒƒ {RezDependencies68k}
 	Rez "{Application}.r" {Environment68k} {VerRezOptions} -append -o {DemoTarg68k}
 {DemoTarg68k} ƒƒ {LinkDependencies68k}
-	Link -w -t APPL -c "{Creator}" {ApplicationLibraries68k} {Standard68kLibraries} -o {DemoTarg68k}
+	Link -w -t APPL -c {Creator} {ApplicationLibraries68k} {Standard68kLibraries} -o {DemoTarg68k}
 {DemoTarg68k} ƒƒ {Obj68k}network_listener.a.o
 	Link  -rt SOCK=128 -m TheSocketListener -sg "socket_listener" ∂
 		"{Obj68k}"network_listener.a.o -o {DemoTarg68k}
 	SetFile -a iB {DemoTarg68k}
-{Application}.demo ƒƒ {RezDependencies68k} {LinkDependencies68k}
-	noresnames {Application}.demo
+#{Application}.demo ƒƒ {RezDependencies68k} {LinkDependencies68k}
+#	noresnames {Application}.demo
 
 # --------------------------------------------------------------------------------------
 # PPC OBJECT DEPENDENCIES
@@ -294,6 +304,7 @@ LinkDependencies68k= {ApplicationLibraries68k}
 {ObjPPC}world.ppc.o ƒ world.h {UbiqDependencies}
 {ObjPPC}textures.ppc.o ƒ textures.h {UbiqDependencies}
 {ObjPPC}scottish_textures.ppc.o ƒ render.h scottish_textures.h textures.h world.h {UbiqDependencies}
+{ObjPPC}scottish_textures.s.o ƒ {UbiqDependencies}
 {ObjPPC}motion_sensor.ppc.o ƒ render.h scottish_textures.h textures.h map.h world.h interface.h motion_sensor.h monsters.h screen_drawing.h {UbiqDependencies}
 {ObjPPC}overhead_map.ppc.o ƒ overhead_map.h map.h world.h player.h overhead_map_macintosh.c {UbiqDependencies}
 
@@ -308,7 +319,7 @@ LinkDependencies68k= {ApplicationLibraries68k}
 {ObjPPC}files_macintosh.ppc.o ƒ portable_files.h game_errors.h tags.h {UbiqDependencies}
 
 #map library dependencies
-{ObjPPC}map.ppc.o ƒ map.h world.h interface.h monsters.h projectiles.h effects.h player.h platforms.h sound.h lightsource.h media.h {UbiqDependencies}
+{ObjPPC}map.ppc.o ƒ map.h world.h interface.h monsters.h projectiles.h effects.h player.h platforms.h game_sound.h lightsource.h media.h {UbiqDependencies}
 {ObjPPC}map_constructors.ppc.o ƒ map.h world.h {UbiqDependencies}
 {ObjPPC}map_accessors.ppc.o ƒ map.h world.h platforms.h {UbiqDependencies}
 {ObjPPC}game_wad.ppc.o ƒ map.h world.h monsters.h network.h projectiles.h effects.h player.h ∂
@@ -317,34 +328,34 @@ LinkDependencies68k= {ApplicationLibraries68k}
 {ObjPPC}flood_map.ppc.o ƒ map.h world.h flood_map.h {UbiqDependencies}
 {ObjPPC}lightsource.ppc.o ƒ map.h world.h lightsource.h {UbiqDependencies}
 {ObjPPC}media.ppc.o ƒ map.h world.h media.h media_definitions.h lightsource.h {UbiqDependencies}
-{ObjPPC}platforms.ppc.o ƒ map.h world.h platforms.h platform_definitions.h lightsource.h sound.h {UbiqDependencies}
+{ObjPPC}platforms.ppc.o ƒ map.h world.h platforms.h platform_definitions.h lightsource.h game_sound.h {UbiqDependencies}
 {ObjPPC}placement.ppc.o ƒ map.h monsters.h {UbiqDependencies}
 
 #shell library dependencies
-{ObjPPC}shell.ppc.o ƒ map.h world.h monsters.h player.h render.h shell.h interface.h sound.h ∂
+{ObjPPC}shell.ppc.o ƒ map.h world.h monsters.h player.h render.h shell.h interface.h game_sound.h ∂
 	music.h fades.h tags.h network_sound.h mouse.h screen_drawing.h computer_interface.h ∂
-	game_wad.h game_window.h {UbiqDependencies}
+	game_wad.h game_window.h {UbiqDependencies} #macintosh_input.h input_sprocket_needs.h 
 {ObjPPC}shapes.ppc.o ƒ shell.h interface.h shapes_macintosh.c {UbiqDependencies}
 {ObjPPC}screen.ppc.o ƒ interface.h map.h world.h render.h scottish_textures.h textures.h shell.h monsters.h overhead_map.h player.h valkyrie.h game_window.h {UbiqDependencies}
 {ObjPPC}quadruple.s.o ƒ {UbiqDependencies}
 {ObjPPC}valkyrie.ppc.o ƒ valkyrie.h textures.h {UbiqDependencies}
-{ObjPPC}sound.ppc.o ƒ interface.h shell.h sound.h sound_definitions.h sound_macintosh.c {UbiqDependencies}
+{ObjPPC}game_sound.ppc.o ƒ interface.h shell.h game_sound.h sound_definitions.h sound_macintosh.c {UbiqDependencies}
 {ObjPPC}preprocess_map_mac.ppc.o ƒ map.h world.h ":editor code:editor.h" interface.h shell.h game_wad.h ∂
 	overhead_map.h player.h game_window.h tags.h wad.h {UbiqDependencies}
-{ObjPPC}game_dialogs.ppc.o ƒ interface.h world.h shell.h music.h {UbiqDependencies}
+{ObjPPC}game_dialogs.ppc.o ƒ interface.h world.h shell.h music.h serial_numbers.c {UbiqDependencies}
 {ObjPPC}screen_drawing.ppc.o ƒ interface.h map.h shell.h screen_drawing.h {UbiqDependencies}
 {ObjPPC}game_window_macintosh.ppc.o ƒ map.h world.h interface.h player.h screen_drawing.h motion_sensor.h ∂
-	sound.h items.h weapons.h game_window.h {UbiqDependencies}
+	game_sound.h items.h weapons.h game_window.h {UbiqDependencies}
 {ObjPPC}images.ppc.o ƒ images.h interface.h map.h {UbiqDependencies}
 {ObjPPC}mouse.ppc.o ƒ mouse.h world.h player.h map.h {UbiqDependencies}
 {ObjPPC}computer_interface.ppc.o ƒ screen_drawing.h computer_interface.h interface.h shell.h map.h overhead_map.h {UbiqDependencies}
 {ObjPPC}music.ppc.o ƒ music.h shell.h {UbiqDependencies}
 {ObjPPC}keyboard_dialog.ppc.o ƒ interface.h {UbiqDependencies}
-{ObjPPC}preferences.ppc.o ƒ map.h world.h shell.h interface.h sound.h preferences.h ∂
+{ObjPPC}preferences.ppc.o ƒ map.h world.h shell.h interface.h game_sound.h preferences.h ∂
 	wad.h wad_prefs.h tags.h {UbiqDependencies}
 {ObjPPC}vbl_macintosh.ppc.o ƒ interface.h map.h world.h shell.h player.h mouse.h key_definitions.h {UbiqDependencies}
 {ObjPPC}interface_macintosh.ppc.o ƒ map.h macintosh_network.h shell.h interface.h player.h network_sound.h ∂
-	screen_drawing.h sound.h fades.h game_window.h game_errors.h {UbiqDependencies}
+	screen_drawing.h game_sound.h fades.h game_window.h game_errors.h {UbiqDependencies}
 
 #network library dependencies
 {ObjPPC}network_games.ppc.o ƒ map.h items.h player.h monsters.h network_games.h {UbiqDependencies}
@@ -365,25 +376,25 @@ LinkDependencies68k= {ApplicationLibraries68k}
 {ObjPPC}{Application}.ppc.o ƒ map.h world.h render.h interface.h flood_map.h effects.h monsters.h projectiles.h player.h ∂
 	scottish_textures.h textures.h monsters.h projectiles.h effects.h flood_map.h player.h ∂
 	network.h scenery.h platforms.h lightsource.h media.h music.h fades.h items.h weapons.h game_window.h {UbiqDependencies}
-{ObjPPC}player.ppc.o ƒ map.h world.h player.h monsters.h interface.h sound.h fades.h media.h items.h ∂
+{ObjPPC}player.ppc.o ƒ map.h world.h player.h monsters.h interface.h game_sound.h fades.h media.h items.h ∂
 	weapons.h game_window.h {UbiqDependencies}
 {ObjPPC}pathfinding.ppc.o ƒ map.h world.h flood_map.h {UbiqDependencies}
-{ObjPPC}monsters.ppc.o ƒ monster_definitions.h render.h scottish_textures.h textures.h map.h world.h interface.h monsters.h projectiles.h effects.h player.h platforms.h sound.h {UbiqDependencies}
+{ObjPPC}monsters.ppc.o ƒ monster_definitions.h render.h scottish_textures.h textures.h map.h world.h interface.h monsters.h projectiles.h effects.h player.h platforms.h game_sound.h {UbiqDependencies}
 {ObjPPC}scenery.ppc.o ƒ scenery_definitions.h scenery.h map.h world.h {UbiqDependencies}
 {ObjPPC}projectiles.ppc.o ƒ projectile_definitions.h render.h scottish_textures.h textures.h map.h world.h interface.h monsters.h projectiles.h effects.h media.h {UbiqDependencies}
 {ObjPPC}effects.ppc.o ƒ effect_definitions.h render.h scottish_textures.h textures.h map.h world.h interface.h effects.h {UbiqDependencies}
-{ObjPPC}devices.ppc.o ƒ map.h world.h monsters.h interface.h player.h platforms.h sound.h ∂
+{ObjPPC}devices.ppc.o ƒ map.h world.h monsters.h interface.h player.h platforms.h game_sound.h ∂
 	computer_interface.h music.h lightsource.h game_window.h {UbiqDependencies}
-{ObjPPC}weapons.ppc.o ƒ map.h world.h projectiles.h player.h weapons.h sound.h interface.h ∂
+{ObjPPC}weapons.ppc.o ƒ map.h world.h projectiles.h player.h weapons.h game_sound.h interface.h ∂
 	items.h monsters.h game_window.h weapon_definitions.h {UbiqDependencies}
-{ObjPPC}items.ppc.o ƒ map.h world.h interface.h monsters.h player.h sound.h platforms.h ∂
+{ObjPPC}items.ppc.o ƒ map.h world.h interface.h monsters.h player.h game_sound.h platforms.h ∂
 	fades.h items.h flood_map.h effects.h game_window.h item_definitions.h weapons.h {UbiqDependencies}
 {ObjPPC}physics.ppc.o ƒ physics_models.h render.h scottish_textures.h textures.h map.h world.h player.h {UbiqDependencies}
 {ObjPPC}vbl.ppc.o ƒ interface.h map.h world.h shell.h player.h mouse.h key_definitions.h {UbiqDependencies}
 {ObjPPC}interface.ppc.o ƒ map.h shell.h interface.h player.h ∂
-	screen_drawing.h sound.h fades.h game_window.h game_errors.h {UbiqDependencies}
+	screen_drawing.h game_sound.h fades.h game_window.h game_errors.h {UbiqDependencies}
 {ObjPPC}game_window.ppc.o ƒ map.h world.h interface.h player.h screen_drawing.h motion_sensor.h ∂
-	sound.h items.h weapons.h game_window.h {UbiqDependencies}
+	game_sound.h items.h weapons.h game_window.h {UbiqDependencies}
 {ObjPPC}fades.ppc.o ƒ interface.h shell.h {UbiqDependencies}
 {ObjPPC}import_definitions.ppc.o ƒ extensions.h wad.h {UbiqDependencies}
 
@@ -392,7 +403,8 @@ LinkDependencies68k= {ApplicationLibraries68k}
 # --------------------------------------------------------------------------------------
 
 RenderLibObjectsPPC= {ObjPPC}render.ppc.o {ObjPPC}world.ppc.o {ObjPPC}textures.ppc.o ∂
-	{ObjPPC}scottish_textures.ppc.o {ObjPPC}overhead_map.ppc.o {ObjPPC}motion_sensor.ppc.o
+	{ObjPPC}scottish_textures.s.o {ObjPPC}overhead_map.ppc.o {ObjPPC}motion_sensor.ppc.o ∂
+	{ObjPPC}scottish_textures.ppc.o
 WadLibObjectsPPC= {ObjPPC}wad.ppc.o {ObjPPC}wad_macintosh.ppc.o {ObjPPC}find_files.ppc.o {ObjPPC}crc.ppc.o ∂
 	{ObjPPC}wad_prefs.ppc.o {ObjPPC}wad_prefs_macintosh.ppc.o {ObjPPC}game_errors.ppc.o ∂
 	{ObjPPC}files_macintosh.ppc.o
@@ -401,7 +413,7 @@ MapLibObjectsPPC= {ObjPPC}map.ppc.o {ObjPPC}lightsource.ppc.o {ObjPPC}flood_map.
 	{ObjPPC}placement.ppc.o
 ShellLibObjectsPPC= {ObjPPC}shell.ppc.o {ObjPPC}screen.ppc.o {ObjPPC}quadruple.s.o ∂
 	{ObjPPC}valkyrie.ppc.o {ObjPPC}shapes.ppc.o ∂
-	{ObjPPC}sound.ppc.o {ObjPPC}preprocess_map_mac.ppc.o {ObjPPC}game_dialogs.ppc.o ∂
+	{ObjPPC}game_sound.ppc.o {ObjPPC}preprocess_map_mac.ppc.o {ObjPPC}game_dialogs.ppc.o ∂
 	{ObjPPC}game_window_macintosh.ppc.o {ObjPPC}interface_macintosh.ppc.o {ObjPPC}vbl_macintosh.ppc.o ∂
 	{ObjPPC}screen_drawing.ppc.o {ObjPPC}mouse.ppc.o {ObjPPC}computer_interface.ppc.o ∂
 	{ObjPPC}music.ppc.o {ObjPPC}preferences.ppc.o {ObjPPC}keyboard_dialog.ppc.o {ObjPPC}images.ppc.o
@@ -443,19 +455,19 @@ LinkDependenciesPPC= {ApplicationLibrariesPPC}
 {TargPPC} ƒƒ {RezDependenciesPPC}
 	Rez {Application}.r {EnvironmentPPC} {VerRezOptions} -append -o {TargPPC}
 {TargPPC} ƒƒ {LinkDependenciesPPC}
-	PPCLink {ApplicationLibrariesPPC} {StandardPPCLibraries} {SymbolsPPC} {PPCFinalLinkOptions} -o "{TargPPC}"
-	MergeFragment {CSeriesLibraries}DisplayLib.runtime "{TargPPC}"
+	PPCLink {ApplicationLibrariesPPC} {StandardPPCLibraries} {SymbolsPPC} {PPCFinalLinkOptions} -weakLib DisplayLib -o "{TargPPC}"
+#	MergeFragment {CSeriesLibraries}DisplayLib.runtime "{TargPPC}"
 #	MakePef "{ObjPPC}"{TargPPC}.xcoff -o {TargPPC} {MakePefOptions}
-	SetFile -t APPL -c "{Creator}" -a iB {TargPPC}
+	SetFile -t APPL -c {Creator} -a iB {TargPPC}
 {TargPPC} ƒƒ {Obj68k}network_listener.a.o
 	Link  -rt SOCK=128 -m TheSocketListener -sg "socket_listener" ∂
 		"{Obj68k}"network_listener.a.o -o {TargPPC}
 {Application}.alpha.ppc ƒƒ {LinkDependenciesPPC}
 	MakeSym -i ::cseries.lib {SymbolsPPC} -o "{TargPPC}.xSYM" "{ObjPPC}{TargPPC}.xcoff"
-{Application}.ppc ƒƒ {RezDependenciesPPC} {LinkDependenciesPPC}
-	noresnames {Application}.ppc
-{Application}.gamma.ppc ƒƒ {RezDependencies68k} {LinkDependencies68k}
-	noresnames {Application}.gamma.ppc
+#{Application}.ppc ƒƒ {RezDependenciesPPC} {LinkDependenciesPPC}
+#	noresnames {Application}.ppc
+#{Application}.gamma.ppc ƒƒ {RezDependencies68k} {LinkDependencies68k}
+#	noresnames {Application}.gamma.ppc
 
 # --------------------------------------------------------------------------------------
 # PPC DEMO APPLICATION DEPENDENCIES AND BUILD COMMANDS
@@ -464,17 +476,17 @@ LinkDependenciesPPC= {ApplicationLibrariesPPC}
 {DemoTargPPC} ƒƒ {RezDependenciesPPC}
 	Rez {Application}.r {EnvironmentPPC} {VerRezOptions} -append -o {DemoTargPPC}
 {DemoTargPPC} ƒƒ {LinkDependenciesPPC}
-	PPCLink {ApplicationLibrariesPPC} {StandardPPCLibraries} {SymbolsPPC} {PPCFinalLinkOptions} -o "{DemoTargPPC}"
-	MergeFragment {CSeriesLibraries}DisplayLib.runtime "{DemoTargPPC}"
+	PPCLink {ApplicationLibrariesPPC} {StandardPPCLibraries} {SymbolsPPC} {PPCFinalLinkOptions} -weakLib DisplayLib -o "{DemoTargPPC}"
+#	MergeFragment {CSeriesLibraries}DisplayLib.runtime "{DemoTargPPC}"
 #	MakePef "{ObjPPC}{DemoTargPPC}.xcoff" -o {DemoTargPPC} {MakePefOptions}
-	SetFile -t APPL -c "{Creator}" -a iB {DemoTargPPC}
+	SetFile -t APPL -c {Creator} -a iB {DemoTargPPC}
 {DemoTargPPC} ƒƒ {Obj68k}network_listener.a.o
 	Link  -rt SOCK=128 -m TheSocketListener -sg "socket_listener" ∂
 		"{Obj68k}"network_listener.a.o -o {DemoTargPPC}
 {Application}.demo.alpha.ppc ƒƒ {LinkDependenciesPPC}
 	MakeSym -i ::cseries.lib {SymbolsPPC} -o {DemoTargPPC}.xSYM "{ObjPPC}{DemoTargPPC}.xcoff"
-{Application}.demo.ppc ƒƒ {RezDependenciesPPC} {LinkDependenciesPPC}
-	noresnames {Application}.demo.ppc
+#{Application}.demo.ppc ƒƒ {RezDependenciesPPC} {LinkDependenciesPPC}
+#	noresnames {Application}.demo.ppc
 
 # --------------------------------------------------------------------------------------
 # FAT APPLICATION DEPENDENCIES AND BUILD COMMANDS

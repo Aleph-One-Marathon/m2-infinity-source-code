@@ -11,6 +11,6 @@ COptions= -i "{CSeriesInterfaces}" -d DEBUG -opt full -b2 -r -mc68020 -k "{CSeri
 OBJECTS= {ToolName}.c.o {CSeriesLibraries}"cseries.debug.lib"
 {ToolName} ƒ {OBJECTS}
 	Link -w -c 'MPS ' -t MPST {OBJECTS} -sn STDIO=Main -sn INTENV=Main -sn %A5Init=Main ∂
-		"{Libraries}"Stubs.o "{Libraries}"Runtime.o "{Libraries}"Interface.o "{CLibraries}"StdCLib.o ∂
-		"{CLibraries}"CSANELib.o "{CLibraries}"Math.o "{Libraries}"ToolLibs.o ∂
-		-o {ToolName}
+		"{Libraries}"Stubs.o "{Libraries}MacRuntime.o" "{Libraries}"Interface.o "{CLibraries}"StdCLib.o ∂
+		"{CLibraries}"CSANELib.o "{Libraries}IntEnv.o" "{CLibraries}"Math.o "{Libraries}"ToolLibs.o ∂
+		"{Libraries}MathLib.o" -o {ToolName}

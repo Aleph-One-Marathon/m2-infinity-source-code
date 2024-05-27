@@ -27,7 +27,8 @@ enum /* projectile flags */
 	_bleeding_projectile= 0x20000, /* can use a monster’s custom bleeding detonation */
 	_horizontal_wander= 0x40000, /* random horizontal error perpendicular to direction of movement */
 	_vertical_wander= 0x80000, /* random vertical movement perpendicular to direction of movement */
-	_affected_by_half_gravity= 0x100000
+	_affected_by_half_gravity= 0x100000,
+	_projectile_passes_media_boundary= 0x200000
 };
 
 /* ---------- structures */
@@ -54,6 +55,7 @@ struct projectile_definition
 
 /* ---------- projectile definitions */
 
+#ifndef DONT_COMPILE_DEFINITIONS
 struct projectile_definition projectile_definitions[NUMBER_OF_PROJECTILE_TYPES]=
 {
 	{	/* player’s rocket */
@@ -340,7 +342,7 @@ struct projectile_definition projectile_definitions[NUMBER_OF_PROJECTILE_TYPES]=
 		NONE, NONE, /* flyby sound, rebound sound */
 	},
 
-	{	/* _projectile_armageddon_sphere */
+	{	/* _projectile_unused */
 		0
 	},
 
@@ -746,4 +748,24 @@ struct projectile_definition projectile_definitions[NUMBER_OF_PROJECTILE_TYPES]=
 		_normal_frequency, /* sound pitch */
 		_snd_yeti_projectile_lava_flyby, NONE, /* flyby sound, rebound sound */
 	},
+
+	{	/* _projectile_smg_bullet */
+		NONE, 0, /* collection number, shape number */
+		_effect_bullet_ricochet, _small_media_detonation_effect, /* detonation effect, media_detonation_effect */
+		NONE, 0, 0, /* contrail effect, ticks between contrails, maximum contrails */
+		NONE, /* media projectile promotion */
+
+		0, /* radius */
+		0, /* area-of-effect */
+		{_damage_projectile, 0, 9, 6}, /* damage */
+		
+		_bleeding_projectile|_usually_pass_transparent_side|_projectile_passes_media_boundary, /* flags */
+		
+		WORLD_ONE, /* speed */
+		NONE, /* maximum range */
+
+		_normal_frequency, /* sound pitch */
+		NONE, NONE, /* flyby sound, rebound sound */
+	},
 };
+#endif

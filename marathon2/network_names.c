@@ -50,6 +50,7 @@ OSErr NetRegisterName(
 	short version,
 	short socketNumber)
 {
+	Handle user_name= (Handle)GetString(strUSER_NAME);
 	MPPPBPtr myMPPPBPtr= (MPPPBPtr) NewPtrClear(sizeof(MPPParamBlock));
 	Str255 adjusted_name;
 	Str255 adjusted_type;
@@ -66,12 +67,17 @@ OSErr NetRegisterName(
 	myNTEName= (NamesTableEntryPtr) NewPtrSysClear(sizeof(NamesTableEntry));
 	assert(myNTEName);
 
-	/* get user name if no object name was supplied*/
-	pstrcpy(adjusted_name, name ? name : *GetString(strUSER_NAME));
+	/* get user name if no object name was supplied */
+	pstrcpy((char *)adjusted_name, name ? name : (user_name ? *user_name : "\p"));
 
 	/* Calculate the adjusted type */
-	sprintf(adjusted_type, "%P%d", type, version);
-	c2pstr(adjusted_type);
+	{
+		Str255 version_text;
+		
+		psprintf((char *)version_text, "%d", version);
+		pstrcpy((char *)adjusted_type, (char *)type);
+		pstrcat(adjusted_type, version_text);
+	}
 
 	error= MemError();
 	if (error==noErr)

@@ -564,7 +564,7 @@ static void physics_update(
 		
 		cosine= cosine_table[FIXED_INTEGERAL_PART(variables->direction)], sine= sine_table[FIXED_INTEGERAL_PART(variables->direction)];
 		dot_product= ((((variables->velocity*cosine)>>TRIG_SHIFT) + variables->external_velocity.i)*cosine +
-			(((variables->velocity*sine)>>TRIG_SHIFT) + variables->external_velocity.j)*sine)>>TRIG_MAGNITUDE;
+			(((variables->velocity*sine)>>TRIG_SHIFT) + variables->external_velocity.j)*sine)>>TRIG_SHIFT;
 
 		if (dot_product>0 && dot_product<(constants->maximum_forward_velocity>>4)) dot_product= 0;
 		switch (SGN(dot_product))

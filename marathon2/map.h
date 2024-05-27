@@ -689,7 +689,9 @@ struct static_data
 	short mission_flags;
 	short environment_flags;
 	
-	short unused[4];
+	boolean ball_in_play;	// true if there's a ball in play
+	boolean unused1;
+	short unused[3];
 
 	char level_name[LEVEL_NAME_LENGTH];
 	long entry_point_flags;
@@ -1036,8 +1038,6 @@ void update_lightsources(void);
 short new_lightsource_from_old(short old_source);
 void entered_polygon(short index);
 void left_polygon(short index);
-/* Only send _light_turning_on, _light_turning_off, _light_toggle */
-void change_light_state(short lightsource_index, short state);
 
 /* ---------- prototypes/DEVICES.C */
 

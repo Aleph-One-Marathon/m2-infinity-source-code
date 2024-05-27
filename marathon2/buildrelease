@@ -1,0 +1,80 @@
+set -e sourceFolder "Crack Haüs:Infinity 11/15:"
+set -e targetFolder "Dos:InfinityBuild:"
+
+set -e majorVersion 0x01
+set -e minorVersion 0x21
+set -e releaseStage "release"
+set -e release 0x00
+set -e regionVersion "verUS"
+set -e shortVersion '1.2.1'
+set -e longVersion "∂"{shortVersion} © 1995-1996 Bungie Software Products Corp.∂""
+set -e short2Version "∂"{shortVersion}∂""
+set -e long2Version "∂"Marathon Infinity∂""
+
+cd ::cseries.lib
+buildprogram macintosh_interfaces.d
+buildprogram cseries
+buildprogram cseries.debug
+cd ::marathon2
+buildprogram marathon2.fat
+buildprogram export_definitions
+buildprogram serial_numbers
+set -e oldname marathon2.fat
+set -e newname "Marathon ∞"
+set -e buildtime "`date -s -d` 12:00 PM"
+noresnames "{oldname}"
+duplicate -d "{oldname}" "{targetFolder}{newname}"
+echo "include ∂"{oldname}∂" not 'ckid';" | rez -align longword -o "{targetFolder}{oldname}"
+echo "∂#include ∂"SysTypes.r∂"∂ninclude ∂"{targetFolder}{oldname}∂" not 'vers';∂nresource 'vers' (1) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{shortVersion}∂",∂"{longVersion}∂"∂};∂nresource 'vers' (2) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{short2Version}∂",∂"{long2Version}∂"∂};" | rez -align longword -o "{targetFolder}{newname}"
+setfile -t APPL -c "26.∞" -a iB "{targetFolder}{newname}" -m "{buildtime}" -d "{buildtime}"
+delete "{targetFolder}{oldname}"
+
+set -e filename "Images"
+set -e oldname "{sourceFolder}{filename}"
+set -e newname "{targetFolder}{filename}"
+noresnames "{oldname}"
+delete -y "{newname}"
+echo "∂#include ∂"SysTypes.r∂"∂ninclude ∂"{oldname}∂" ('PICT');∂ninclude ∂"{oldname}∂" ('clut');∂nresource 'vers' (1) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{shortVersion}∂",∂"{longVersion}∂"∂};∂nresource 'vers' (2) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{short2Version}∂",∂"{long2Version}∂"∂};" | rez -align longword -o "{newname}"
+setfile -t img2 -c '26.∞' "{newname}" -m "{buildtime}" -d "{buildtime}"
+
+set -e filename "Music"
+set -e oldname "{sourceFolder}{filename}"
+set -e newname "{targetFolder}{filename}"
+delete -y "{newname}"
+duplicate -d "{oldname}" "{newname}"
+echo "∂#include ∂"SysTypes.r∂"∂nresource 'vers' (1) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{shortVersion}∂",∂"{longVersion}∂"∂};∂nresource 'vers' (2) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{short2Version}∂",∂"{long2Version}∂"∂};" | rez -align longword -o "{newname}"
+setfile -t mus2 -c '26.∞' -a c "{newname}" -m "{buildtime}" -d "{buildtime}"
+
+set -e filename "Shapes"
+set -e oldname "{sourceFolder}{filename}"
+set -e newname "{targetFolder}{filename}"
+duplicate -d "{oldname}" "{newname}"
+echo "∂#include ∂"SysTypes.r∂"∂nresource 'vers' (1) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{shortVersion}∂",∂"{longVersion}∂"∂};∂nresource 'vers' (2) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{short2Version}∂",∂"{long2Version}∂"∂};" | rez -align longword -o "{newname}"
+setfile -t 'shp∞' -c '26.∞' "{newname}" -m "{buildtime}" -d "{buildtime}"
+
+set -e filename "Sounds"
+set -e oldname "{sourceFolder}{filename}"
+set -e newname "{targetFolder}{filename}"
+duplicate -d "{oldname}" "{newname}"
+echo "∂#include ∂"SysTypes.r∂"∂nresource 'vers' (1) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{shortVersion}∂",∂"{longVersion}∂"∂};∂nresource 'vers' (2) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{short2Version}∂",∂"{long2Version}∂"∂};" | rez -align longword -o "{newname}"
+setfile -t 'snd∞' -c '26.∞' "{newname}" -m "{buildtime}" -d "{buildtime}"
+
+set -e filename "Map"
+set -e oldname "{sourceFolder}{filename}"
+set -e newname "{targetFolder}{filename}"
+delete -y "{newname}"
+noresnames "{oldname}"
+duplicate -d "{oldname}" "{newname}"
+echo "∂#include ∂"SysTypes.r∂"∂ninclude ∂"{oldname}∂" ('PICT');∂ninclude ∂"{oldname}∂" ('clut');∂nresource 'vers' (1) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{shortVersion}∂",∂"{longVersion}∂"∂};∂nresource 'vers' (2) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{short2Version}∂",∂"{long2Version}∂"∂};" | rez -align longword -o "{newname}"
+setfile -t 'sce2' -c '26.∞' "{newname}" -m "{buildtime}" -d "{buildtime}"
+
+export_definitions "{targetFolder}Standard"
+
+set -e filename "Standard"
+set -e oldname "{filename}"
+set -e newname "{targetFolder}{filename}"
+delete -y "{newname}"
+noresnames "{oldname}"
+duplicate -d "{oldname}" "{newname}"
+echo "∂#include ∂"SysTypes.r∂"∂nresource 'vers' (1) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{shortVersion}∂",∂"{longVersion}∂"∂};∂nresource 'vers' (2) ∂{{majorVersion},{minorVersion},{releaseStage},{release},{regionVersion},∂"{short2Version}∂",∂"{long2Version}∂"∂};" | rez -align longword -o "{newname}"
+setfile -t 'phy∞' -c '26.∞' "{newname}" -m "{buildtime}" -d "{buildtime}"

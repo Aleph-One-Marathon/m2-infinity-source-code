@@ -1,3 +1,5 @@
+#ifndef __PLATFORMS_H__
+#define __PLATFORMS_H__
 /*
 PLATFORMS.H
 Friday, July 15, 1994 3:42:39 PM
@@ -262,4 +264,6 @@ short get_platform_moving_sound(short platform_index);
 struct platform_data *get_platform_data(short platform_index);
 #else
 #define get_platform_data(i) (platforms+(i))
+#endif
+
 #endif

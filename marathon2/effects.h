@@ -74,6 +74,12 @@ enum /* effect types */
 	_effect_yeti_melee_detonation,
 	_effect_juggernaut_spark,
 	_effect_juggernaut_missile_contrail,
+	_effect_small_jjaro_splash,
+	_effect_medium_jjaro_splash,
+	_effect_large_jjaro_splash,
+	_effect_large_jjaro_emergence,
+	_effect_vacuum_civilian_blood_splash,
+	_effect_assimilated_vacuum_civilian_blood_splash,
 	NUMBER_OF_EFFECT_TYPES
 };
 

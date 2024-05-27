@@ -10,6 +10,10 @@
 #include "shell.h"
 #include "screen.h"
 
+#ifdef SUPPORT_INPUT_SPROCKET
+#include "InputSprocket.h"
+#endif
+
 #define strKEYCODES_TO_ASCII        133
 #define alrtDUPLICATE_KEY           136
 #define OPTION_KEYCODE             0x3a
@@ -55,6 +59,9 @@ struct keyboard_setup_struct {
 	KeyMap old_key_map;
 	short *keycodes;	
 	short current_key_setup;
+#ifdef SUPPORT_INPUT_SPROCKET
+	ISpElementReference *isElements;
+#endif
 };
 
 /* -------- globals. */
@@ -102,7 +109,7 @@ boolean configure_key_setup(
 	ShowWindow(dialog);
 
 	/* Setup the globals.. */
-	GetKeys(&keyboard_setup_globals.old_key_map);
+	GetKeys(keyboard_setup_globals.old_key_map);
 	keyboard_setup_globals.keycodes= keycodes;
 	keyboard_setup_globals.current_key_setup= current_key_set;
 
@@ -144,7 +151,7 @@ boolean configure_key_setup(
 			{
 				data_is_bad = TRUE;
 				SelIText(dialog, location_of_duplicate + FIRST_KEY_ITEM, 0, SHORT_MAX);
-				ParamText(getpstr(temporary, strKEYCODES_TO_ASCII, keycodes[location_of_duplicate]), "", "", "");
+				ParamText((StringPtr)getpstr(temporary, strKEYCODES_TO_ASCII, keycodes[location_of_duplicate]), (StringPtr)"", (StringPtr)"", (StringPtr)"");
 				Alert(alrtDUPLICATE_KEY, NULL);
 			}
 			else
@@ -185,9 +192,85 @@ static pascal Boolean key_setup_filter_proc(
 	switch(event->what)
 	{
 		case nullEvent:
+#if 0
+#ifdef SUPPORT_INPUT_SPROCKET
+			{
+				ISpElementListReference globalList = nil;
+				OSStatus theStatus = noErr;
+				ISpElementEvent theEvent;
+				Boolean wasEvent;
+				
+				theStatus = ISpGetGlobalElementList(&globalList);
+				assert(theStatus == noErr);
+				
+				// get event may return an error if there was a > 4 byte data, we ignore that data, so no error checking
+				// kinda a hack
+				ISpElementList_GetNextEvent(globalList, sizeof(ISpElementEvent), &theEvent, &wasEvent);
+				
+				if (wasEvent)
+				{
+					ISpElementInfo theInfo;
+					ControlHandle control;
+					Handle item_handle;
+					Rect item_box;
+					short item_type;
+					Boolean setText = false;
+					UInt32 enoughAxis = ((kISpAxisMaximum - kISpAxisMiddle) * 0.9) + kISpAxisMiddle;
+					static ISpElementReference bogusAxis = nil;
+
+					current_edit_field= ((DialogRecord *) dialog)->editField + 1;
+					
+					ISpElement_GetInfo(theEvent.element, &theInfo);
+					
+					if (bogusAxis != nil)
+					{
+						// do something sometime to clear the bogus axis again if it is
+						// far enough back down...
+					}
+	
+					if ((theInfo.theKind == kISpElementKind_Button) && (theEvent.data == kISpButtonDown))
+					{
+						// ok, this was a button stuff it into our structure
+						// theEvent.element was what was hit
+						setText = true;
+					}
+					else if ((theInfo.theKind == kISpElementKind_DPad) && (theEvent.data != kISpPadIdle))
+					{
+						// set this one to activate if it is also == theEvent.data
+						setText = true;
+					}
+					else if ((theInfo.theAxis == kISpElementKind_Axis) && (theEvent.data > (enoughAxis)) && (bogusAxis != theEvent.element))
+					{
+						setText = true;
+					}
+					else
+					{
+						setText = false;
+						
+						// handle axis and other stuff later
+						GetDItem(dialog, iKEY_LAYOUT_POPUP, &item_type, (Handle *) &control, &item_box);
+						SetCtlValue(control, _custom_keyboard_item+1);
+					}
+					
+					if (setText)
+					{
+						GetDItem(dialog, current_edit_field, &item_type, &item_handle, &item_box);
+						SetIText(item_handle, theInfo.theString);
+						
+						GetDItem(dialog, iKEY_LAYOUT_POPUP, &item_type, (Handle *) &control, &item_box);
+						SetCtlValue(control, _custom_keyboard_item+1);
+
+						*item_hit = current_edit_field < LAST_KEY_ITEM ? current_edit_field + 1 : FIRST_KEY_ITEM;
+						SelIText(dialog, *item_hit, 0, SHORT_MAX);
+					}
+				}
+			}
+			break;
+#endif
+#endif
 		case keyDown:
 		case autoKey:
-			GetKeys(&key_map);
+			GetKeys(key_map);
 			if (memcmp(key_map, keyboard_setup_globals.old_key_map, sizeof(KeyMap))) // the user has hit a new key
 			{
 				current_edit_field= ((DialogRecord *) dialog)->editField + 1;
@@ -285,7 +368,7 @@ static void fill_in_key_name(
 		csprintf(temporary, "which = %d, keycodes[which] = %d", which, keycodes[which]));
 	getpstr(temporary, strKEYCODES_TO_ASCII, keycodes[which]);
 	GetDItem(dialog, which + FIRST_KEY_ITEM, &item_type, &item_handle, &item_box);
-	SetIText(item_handle, temporary);
+	SetIText(item_handle, (StringPtr)temporary);
 }
 
 static short find_key_hit(
@@ -355,6 +438,9 @@ static short find_key_hit(
 					case kcF7:
 					case kcF8:
 					case kcF9:
+					case kcF10:
+					case kcF11:
+					case kcF12:
 						error_message= keyIsUsedAlready;
 						break;
 						
@@ -429,6 +515,6 @@ static boolean is_pressed(
 {
 	KeyMap key_map;
 	
-	GetKeys(&key_map);
+	GetKeys(key_map);
 	return ((((byte*)key_map)[key_code>>3] >> (key_code & 7)) & 1);
 }

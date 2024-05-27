@@ -70,7 +70,7 @@ void initialize_shape_handler(
 	assert(hollow_pixmap);
 	if (HOLLOW_PIXMAP_BUFFER_SIZE)
 	{
-		hollow_data= NewPtr(HOLLOW_PIXMAP_BUFFER_SIZE);
+		hollow_data= (pixel8 *)NewPtr(HOLLOW_PIXMAP_BUFFER_SIZE);
 		assert(hollow_data);
 	}
 
@@ -152,7 +152,7 @@ PixMapHandle get_shape_pixmap(
 	/* setup the pixmap (can’t wait to change this for Copland) */
 	SetRect(&(*hollow_pixmap)->bounds, 0, 0, bitmap->width, bitmap->height);
 	(*hollow_pixmap)->rowBytes= bitmap->width|0x8000;
-	(*hollow_pixmap)->baseAddr= bitmap->row_addresses[0];
+	(*hollow_pixmap)->baseAddr= (Ptr)bitmap->row_addresses[0];
 	
 	if (bitmap->bytes_per_row==NONE) /* is this a compressed shape? */
 	{
@@ -180,7 +180,7 @@ PixMapHandle get_shape_pixmap(
 			}
 		}
 
-		(*hollow_pixmap)->baseAddr= hollow_data;
+		(*hollow_pixmap)->baseAddr= (Ptr)hollow_data;
 	}
 	else
 	{
@@ -189,9 +189,109 @@ PixMapHandle get_shape_pixmap(
 		{
 			assert(bitmap->width*bitmap->height<=HOLLOW_PIXMAP_BUFFER_SIZE);
 			BlockMove(bitmap->row_addresses[0], hollow_data, bitmap->width*bitmap->height);
-			(*hollow_pixmap)->baseAddr= hollow_data;
+			(*hollow_pixmap)->baseAddr= (Ptr)hollow_data;
 		}
 	}
+	
+	return hollow_pixmap;
+}
+
+PixMapHandle editor_get_shape_pixmap(
+	short shape)
+{
+	OSErr error;
+	struct collection_definition *collection;
+	struct low_level_shape_definition *low_level_shape;
+	struct bitmap_definition *bitmap;
+	short collection_index, low_level_shape_index, clut_index;
+
+	collection_index= GET_COLLECTION(GET_DESCRIPTOR_COLLECTION(shape));
+	clut_index= GET_COLLECTION_CLUT(GET_DESCRIPTOR_COLLECTION(shape));
+	low_level_shape_index= GET_DESCRIPTOR_SHAPE(shape);
+ 	collection= get_collection_definition(collection_index);
+
+	switch (interface_bit_depth)
+	{
+		case 8:
+			/* if the ctSeed of our offscreen pixmap is different from the ctSeed of the world
+				device then the color environment has changed since the last call to our routine,
+				and we just HandToHand the device’s ctTable and throw away our old one. */
+			if ((*(*(*world_device)->gdPMap)->pmTable)->ctSeed!=(*(*hollow_pixmap)->pmTable)->ctSeed)
+			{
+				DisposeHandle((Handle)(*hollow_pixmap)->pmTable);
+				
+				(*hollow_pixmap)->pmTable= (*(*world_device)->gdPMap)->pmTable;	
+				HLock((Handle)hollow_pixmap);
+				error= HandToHand((Handle *)&(*hollow_pixmap)->pmTable);
+				HUnlock((Handle)hollow_pixmap);
+				
+				assert(error==noErr);
+				
+				/* this is a device color table so we don’t clear ctFlags (well, it isn’t a device
+					color table anymore, but it’s formatted like one */
+			}
+			break;
+		
+		case 16:
+		case 32:
+			if (!hollow_pixmap_color_table)
+			{
+				hollow_pixmap_color_table= (CTabHandle) NewHandle(sizeof(ColorTable)+PIXEL8_MAXIMUM_COLORS*sizeof(ColorSpec));
+				MoveHHi((Handle)hollow_pixmap_color_table);
+				HLock((Handle)hollow_pixmap_color_table);
+				assert(hollow_pixmap_color_table);
+			}
+			
+			(*hollow_pixmap_color_table)->ctSeed= GetCTSeed();
+			(*hollow_pixmap_color_table)->ctSize= collection->color_count-NUMBER_OF_PRIVATE_COLORS-1;
+			(*hollow_pixmap_color_table)->ctFlags= 0;
+			
+			BlockMove(get_collection_colors(collection_index, clut_index)+NUMBER_OF_PRIVATE_COLORS, &(*hollow_pixmap_color_table)->ctTable,
+				(collection->color_count-NUMBER_OF_PRIVATE_COLORS)*sizeof(ColorSpec));
+			
+			(*hollow_pixmap)->pmTable= hollow_pixmap_color_table;
+			
+			break;
+		
+		default:
+			halt();
+	}
+
+	low_level_shape= get_low_level_shape_definition(collection_index, low_level_shape_index);
+	bitmap= get_bitmap_definition(collection_index, low_level_shape->bitmap_index);
+	
+	/* setup the pixmap (can’t wait to change this for Copland) */
+	SetRect(&(*hollow_pixmap)->bounds, 0, 0, bitmap->width, bitmap->height);
+	(*hollow_pixmap)->rowBytes= bitmap->width|0x8000;
+	(*hollow_pixmap)->baseAddr= (Ptr)bitmap->row_addresses[0];
+	
+	/* Rotate if necessary */
+	if ((bitmap->flags&_COLUMN_ORDER_BIT) && bitmap->width==128 && bitmap->height==128)
+	{
+		static char *buffer= NULL;
+
+		if(!buffer)
+		{	
+			buffer= (char *)malloc(bitmap->width*bitmap->height*sizeof(pixel8));
+		}
+	
+		if(buffer)
+		{
+			short x, y;
+			pixel8 *dest= (pixel8 *) buffer;
+
+			/* decompress column-order shape into row-order buffer */
+			for (x=0;x<bitmap->width;x+=1)
+			{
+				for(y= 0; y<bitmap->height; y+=1)
+				{
+					*dest++= bitmap->row_addresses[y][x];
+				}
+			}
+
+			(*hollow_pixmap)->baseAddr= buffer;
+		}
+	} 
 	
 	return hollow_pixmap;
 }
@@ -407,7 +507,7 @@ static Handle read_handle_from_file(
 		}
 	}
 	
-	vwarn(error==noErr, csprintf(temporary, "load_sound() got error #%d", error));
+	vwarn(error==noErr, csprintf(temporary, "read_handle_from_file() got error #%d", error));
 	
 	return data;
 }
@@ -496,40 +596,60 @@ static void build_shading_tables16(
 }
 #endif
 
-#if 0
-static void dump_colors(RGBColor *colors, short color_count)
+#ifdef DEBUG
+void dump_colors(
+	struct rgb_color_value *colors, 
+	short color_count)
 {
 	CTabHandle new_table;
 	Handle old_bad_clut;
-	RGBColor *color;
+	struct rgb_color_value *color;
 	short loop;
-
-	new_table= (CTabHandle) NewHandleClear(sizeof(ColorTable)+color_count*sizeof(ColorSpec));
-	HLock((Handle) new_table);
-	(*new_table)->ctSeed= GetCTSeed();
-	(*new_table)->ctFlags= 0;
-	(*new_table)->ctSize= color_count-1;
+	FSSpec file;
+	short refnum;
 	
-	/* Slam the colors.. */
-	color= colors;
-	for(loop=0; loop<=color_count; ++loop)
-	{
-		(*new_table)->ctTable[loop].rgb= *color;
-		(*new_table)->ctTable[loop].value= loop;
-		color++;
-	}
-	HUnlock((Handle) new_table);
+	file.vRefNum= -1;
+	file.parID= 2;
+	strcpy((char *)file.name, (const char *)"\pMarathon2 Clut\0");
 
-	old_bad_clut= GetResource('clut', 5454);
-	if (old_bad_clut)
+	FSpCreateResFile(&file, 'RSED', 'rsrc', smSystemScript);
+	refnum= FSpOpenResFile(&file, fsWrPerm);
+	if(refnum>=0)
 	{
-		RmveResource((Handle) old_bad_clut);
-		DisposeHandle((Handle) old_bad_clut);
-		UpdateResFile(CurResFile());
-	}
+		new_table= (CTabHandle) NewHandleClear(sizeof(ColorTable)+color_count*sizeof(ColorSpec));
+		HLock((Handle) new_table);
+		(*new_table)->ctSeed= GetCTSeed();
+		(*new_table)->ctFlags= 0;
+		(*new_table)->ctSize= color_count-1;
+		
+		/* Slam the colors.. */
+		color= colors;
+		for(loop=0; loop<=color_count; ++loop)
+		{
+			(*new_table)->ctTable[loop].rgb.red= color->red;
+			(*new_table)->ctTable[loop].rgb.green= color->green;
+			(*new_table)->ctTable[loop].rgb.blue= color->blue;
+			(*new_table)->ctTable[loop].value= loop;
+			color++;
+		}
+		HUnlock((Handle) new_table);
 	
-	AddResource((Handle) new_table, 'clut', 5454, "\pBad Colors");
-	WriteResource((Handle) new_table);
-	ReleaseResource((Handle) new_table);
+		old_bad_clut= GetResource('clut', 5454);
+		if (old_bad_clut)
+		{
+			RmveResource((Handle) old_bad_clut);
+			DisposeHandle((Handle) old_bad_clut);
+			UpdateResFile(CurResFile());
+		}
+		
+		AddResource((Handle) new_table, 'clut', 5454, "\pMarathon2 Color Table");
+		if(ResError()) dprintf("Err adding it: %d", ResError());
+		WriteResource((Handle) new_table);
+		ReleaseResource((Handle) new_table);
+		
+		CloseResFile(refnum);
+	}
+
+	return;
 }
 #endif

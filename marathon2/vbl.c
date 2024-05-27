@@ -42,7 +42,11 @@ Friday, January 13, 1995 11:38:51 AM  (Jason')
 	fixed the 'a' key getting blacklisted.
 */
 
+#ifdef SUPPORT_INPUT_SPROCKET
+#include "macintosh_cseries.h"
+#else
 #include "cseries.h"
+#endif
 #include <string.h>
 
 #include "map.h"
@@ -53,6 +57,21 @@ Friday, January 13, 1995 11:38:51 AM  (Jason')
 #include "tags.h"
 #include "portable_files.h"
 #include "vbl.h"
+// for no particular reason, cseries is built with PPC alignment
+#ifdef envppc
+#pragma options align=power
+#endif
+#include "mytm.h"	// for ludicrous speed
+#ifdef envppc
+#pragma options align=reset
+#endif
+
+#ifdef SUPPORT_INPUT_SPROCKET
+#include "InputSprocket.h"
+extern ISpElementReference *input_sprocket_elements;
+#include "macintosh_input.h"
+#include "shell.h"
+#endif
 
 #ifdef mpwc
 #pragma segment input
@@ -156,11 +175,39 @@ void initialize_keyboard_controller(
 	return;
 }
 
+void toggle_ludicrous_speed(
+	boolean ludicrous_speed)
+{
+	if (input_task_active && input_task)
+	{
+		((myTMTaskPtr)input_task)->period=
+			((ludicrous_speed && (((myTMTaskPtr)input_task)->period == 1000/TICKS_PER_SECOND))?
+				450/TICKS_PER_SECOND : 1000/TICKS_PER_SECOND);
+	}
+}
+
 void set_keyboard_controller_status(
 	boolean active)
 {
-	input_task_active= active;
+#ifdef SUPPORT_INPUT_SPROCKET
+	long int itr;
+#endif
 
+	// if already set then drop out
+	if (input_task_active == active) { return; }
+
+	input_task_active= active;
+#ifdef SUPPORT_INPUT_SPROCKET
+	if (use_input_sprocket)
+	{
+		for(itr = 0; itr < NUMBER_OF_INPUT_SPROCKET_NEEDS; itr++)
+		{
+			ISpElement_Flush(input_sprocket_elements[itr]);
+		}
+		
+		active ? (void) ISpResume() : (void) ISpSuspend();
+	}
+#endif
 	return;
 }
 
@@ -558,7 +605,7 @@ boolean setup_for_replay_from_file(
 {
 	boolean successful= FALSE;
 
-#pragma unused(map_checksum);
+#pragma unused(map_checksum)
 	replay.recording_file_refnum= open_file_for_reading(file);
 	if(replay.recording_file_refnum > 0)
 	{
@@ -575,7 +622,7 @@ boolean setup_for_replay_from_file(
 		/* Set to the mapfile this replay came from.. */
 		if(use_map_file(replay.header.map_checksum))
 		{
-			replay.fsread_buffer= malloc(DISK_CACHE_SIZE); 
+			replay.fsread_buffer= (char *)malloc(DISK_CACHE_SIZE); 
 			assert(replay.fsread_buffer);
 			if(!replay.fsread_buffer) alert_user(fatalError, strERRORS, outOfMemory, memory_error());
 			

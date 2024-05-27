@@ -87,4 +87,17 @@ struct scenery_definition scenery_definitions[]=
 	{0, BUILD_DESCRIPTOR(_collection_scenery5, 12)}, // hunter shield
 	{0, BUILD_DESCRIPTOR(_collection_scenery5, 13)}, // bones
 	{0, BUILD_DESCRIPTOR(_collection_scenery5, 18)}, // alien sludge
+
+	// jjaro
+	{_scenery_is_solid, BUILD_DESCRIPTOR(_collection_scenery4, 5), WORLD_ONE/6, -WORLD_ONE/8, NONE, BUILD_DESCRIPTOR(_collection_scenery3, 6)},
+	{_scenery_is_solid, BUILD_DESCRIPTOR(_collection_scenery4, 7), WORLD_ONE/8, WORLD_ONE, NONE, BUILD_DESCRIPTOR(_collection_scenery3, 8)}, // long green light
+	{0, BUILD_DESCRIPTOR(_collection_scenery4, 4)}, // junk
+	{0, BUILD_DESCRIPTOR(_collection_scenery4, 9)}, // big antenna
+	{0, BUILD_DESCRIPTOR(_collection_scenery4, 10)}, // big antenna
+	{_scenery_is_solid, BUILD_DESCRIPTOR(_collection_scenery4, 11), WORLD_ONE_FOURTH, WORLD_ONE_HALF}, // alien supply can
+	{0, BUILD_DESCRIPTOR(_collection_scenery4, 13)}, // bones
+	{0, BUILD_DESCRIPTOR(_collection_scenery4, 17)}, // big bones
+	{0, BUILD_DESCRIPTOR(_collection_scenery4, 12)}, // pfhor pieces
+	{0, BUILD_DESCRIPTOR(_collection_scenery4, 14)}, // bob pieces
+	{0, BUILD_DESCRIPTOR(_collection_scenery4, 15)}, // bob blood
 };

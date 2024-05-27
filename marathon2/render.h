@@ -129,3 +129,6 @@ void render_overhead_map(struct view_data *view);
 void render_computer_interface(struct view_data *view);
 
 #include "scottish_textures.h"
+
+extern boolean has_ambiguous_flags;
+extern boolean exceeded_max_node_aliases;

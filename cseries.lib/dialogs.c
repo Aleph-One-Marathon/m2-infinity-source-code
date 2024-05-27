@@ -104,6 +104,8 @@ pascal Boolean general_filter_proc(
 	GrafPtr old_port;
 	short part;
 
+	global_idle_proc();
+
 	if (cursor_tracking) track_dialog_cursor(dialog);
 	
 	switch (event->what)
@@ -134,6 +136,10 @@ pascal Boolean general_filter_proc(
 				key= event->message&charCodeMask;
 				switch (key)
 				{
+					case 0:
+						/* we might get zeros from the stay_awake() proc, and we should eat them */
+						return TRUE;
+					
 					case 0x09:
 						if (event->modifiers&shiftKey)
 						{
@@ -330,14 +336,14 @@ short myAlert(
 	short alertID,
 	ModalFilterUPP filterProc)
 {
-	Handle template;
+	Handle tmplate;
 	
-	template= GetResource('ALRT', alertID);
-	assert(template);
+	tmplate= GetResource('ALRT', alertID);
+	assert(tmplate);
 	
-	if (GetHandleSize(template)==14)
+	if (tmplate && GetHandleSize(tmplate)==14)
 	{
-		position_window((Rect*)*template, *((word*)*template+6));
+		position_window((Rect*)*tmplate, *((word*)*tmplate+6));
 	}
 	
 	return Alert(alertID, filterProc);
@@ -350,14 +356,14 @@ DialogPtr myGetNewDialog(
 	long refCon)
 {
 	DialogPtr dialog;
-	Handle template;
+	Handle tmplate;
 	
-	template= GetResource('DLOG', dialogID);
-	assert(template);
+	tmplate= GetResource('DLOG', dialogID);
+	assert(tmplate);
 	
-	if (GetHandleSize(template)==24)
+	if (tmplate && GetHandleSize(tmplate)==24)
 	{
-		position_window((Rect*)*template, *((word*)*template+11));
+		position_window((Rect*)*tmplate, *((word*)*tmplate+11));
 	}
 	
 	dialog= GetNewDialog(dialogID, dStorage, behind);
@@ -379,15 +385,18 @@ void standard_dialog_header_proc(
 
 	header= (PicHandle) GetResource('PICT', 256);
 	assert(header);
-	
-	SetRect(&background, frame->left, frame->top, frame->right, frame->top+
-		RECTANGLE_HEIGHT(&(*header)->picFrame)+2*DIALOG_HEADER_SPACING);
-	PaintRect(&background);
-	
-	destination= (*header)->picFrame;
-	OffsetRect(&destination, frame->left+2*DIALOG_HEADER_SPACING-destination.left,
-		frame->top+DIALOG_HEADER_SPACING-destination.top);
-	DrawPicture(header, &destination);
+
+	if (header)
+	{
+		SetRect(&background, frame->left, frame->top, frame->right, frame->top+
+			RECTANGLE_HEIGHT(&(*header)->picFrame)+2*DIALOG_HEADER_SPACING);
+		PaintRect(&background);
+		
+		destination= (*header)->picFrame;
+		OffsetRect(&destination, frame->left+2*DIALOG_HEADER_SPACING-destination.left,
+			frame->top+DIALOG_HEADER_SPACING-destination.top);
+		DrawPicture(header, &destination);
+	}
 	
 	return;
 }
@@ -406,7 +415,7 @@ Boolean CmdPeriodEvent(
 	Handle  hKCHR;        /* Handle to the currently-used KCHR */
 	long    keyInfo;      /* Key information returned from KeyTrans */
 	long    keyScript;    /* Script of the current keyboard */
-	long    state;        /* State used for KeyTrans */
+	unsigned long    state;        /* State used for KeyTrans */
 	short   virtualKey;   /* Virtual keycode of the character-generating key */
 	short   keyCode;      /* Keycode of the character-generating key */
 	Boolean gotCmdPeriod; /* True if detected command-. */
@@ -429,7 +438,7 @@ Boolean CmdPeriodEvent(
 
 				/* Get key information */
 				state = 0;
-				keyInfo = KeyTrans( *hKCHR, keyCode, &state );
+				keyInfo = KeyTrans( *hKCHR, keyCode, &state);
 			}
 			else
 				keyInfo = anEvent->message;
@@ -460,10 +469,81 @@ long extract_number_from_text_item(
 	Handle     item_handle;
 
 	GetDItem(dialog, item_number, &item_type, &item_handle, &item_box);
-	GetIText(item_handle, temporary);
-	StringToNum(temporary, &num);
+	GetIText(item_handle, (unsigned char *)temporary);
+	StringToNum((const unsigned char *)temporary, &num);
 	
 	return num;
+}
+
+float extract_float_from_text_item(
+	DialogPtr dialog, 
+	short item_num)
+{
+	Rect       item_box;
+	short      item_type;
+	float      num;
+	Handle     item_handle;
+	
+	GetDItem(dialog, item_num, &item_type, &item_handle, &item_box);
+	GetIText(item_handle, (unsigned char *)temporary);
+	p2cstr((unsigned char *)temporary);
+	sscanf(temporary, "%f", &num);
+	
+	return num;
+}
+
+void insert_number_into_text_item(
+	DialogPtr dialog,
+	short item_number,
+	long new_value)
+{
+	char       number_text[12]; // big enough to handle 4294967295 for sure.
+	Rect       item_box;
+	short      item_type;
+	Handle     item_handle;
+	
+	GetDItem(dialog, item_number, &item_type, &item_handle, &item_box);
+	NumToString(new_value, (unsigned char *)number_text);
+	SetIText(item_handle, (StringPtr)number_text);
+}
+
+void insert_float_into_text_item(
+	DialogPtr dialog, 
+	short item_number,
+	float new_value)
+{
+	Rect       item_box;
+	short      item_type;
+	Handle     item_handle;
+	
+	sprintf(temporary, "%.3f", new_value);
+	c2pstr(temporary);
+
+	GetDItem(dialog, item_number, &item_type, &item_handle, &item_box);
+	SetIText(item_handle, (StringPtr)temporary);
+}
+
+MenuHandle get_popup_menu_handle(
+	DialogPtr dialog,
+	short item)
+{
+	struct PopupPrivateData **privateHndl;
+	MenuHandle menu;
+	short item_type;
+	ControlHandle control;
+	Rect bounds;
+
+	/* Add the maps.. */
+	GetDItem(dialog, item, &item_type, (Handle *) &control, &bounds);
+
+	/* I don't know how to assert that it is a popup control... <sigh> */
+	privateHndl= (PopupPrivateData **) ((*control)->contrlData);
+	assert(privateHndl);
+
+	menu= (*privateHndl)->mHandle;
+	assert(menu);
+
+	return menu;
 }
 
 /* ---------- private code */
@@ -683,7 +763,7 @@ static short dialog_keyboard_equivilents(
 		{
 			if ((*(ControlHandle)item_handle)->contrlHilite==CONTROL_ACTIVE)
 			{
-				GetCTitle((ControlHandle)item_handle, temporary);
+				GetCTitle((ControlHandle)item_handle, (unsigned char *)temporary);
 				if (((byte)*temporary)<128) /* ignore high ascii for kanji buttons */
 				{
 					if (key==tolower(*(temporary+1)))

@@ -80,7 +80,7 @@ volatile struct valkyrie_data *valkyrie= (struct valkyrie_data *) NULL;
 
 /* ---------- private code */
 
-static void valkyrie_change_clut(byte *clut_register, CTabHandle color_table);
+static void valkyrie_change_clut(volatile byte *clut_register, CTabHandle color_table);
 
 #ifdef env68k
 static pascal void vbl_proc(void);
@@ -202,7 +202,7 @@ void valkyrie_initialize_invisible_video_buffer(
 	if (valkyrie->pixel_doubling) bitmap->width>>= 1, bitmap->height>>= 1;
 	bitmap->bit_depth= 16;
 	bitmap->bytes_per_row= VALKYRIETranslatedVideoBufferRowBytes;
-	bitmap->row_addresses[0]= valkyrie->visible_video_buffer ? VALKYRIETranslatedVideoBuffer0 : VALKYRIETranslatedVideoBuffer1;
+	bitmap->row_addresses[0]= valkyrie->visible_video_buffer ? (byte *)VALKYRIETranslatedVideoBuffer0 : (byte *)VALKYRIETranslatedVideoBuffer1;
 	precalculate_bitmap_row_addresses(bitmap);
 
 	while (!valkyrie->refresh);
@@ -250,7 +250,7 @@ void valkyrie_erase_graphic_key_frame(
 	if (valkyrie)
 	{
 		PixMapHandle pixmap= (*valkyrie->device)->gdPMap;
-		byte *base= (*pixmap)->baseAddr;
+		byte *base= (byte *)(*pixmap)->baseAddr;
 		short bytes_per_row= (*pixmap)->rowBytes&0x3fff;
 		short row;
 		
@@ -303,10 +303,12 @@ boolean machine_has_valkyrie(
 		Gestalt(gestaltMachineType, &machine_type);
 		switch (machine_type)
 		{
-			case 41:
-			case 42:
-			case 98: // original quadra 630
-			case 99:
+			case 41:	// PPC 5200
+			case 42:	// PPC 6200
+			case 98:	// Q630
+			case 99:	// LC580
+			case 106:	// Q630 with PPC upgrade
+			case 107:	// Q580 with PPC upgrade
 				has_valkyrie= TRUE;
 				break;
 		}
@@ -319,7 +321,7 @@ boolean machine_has_valkyrie(
 
 /* ignores ColorSpec.index (assumes linear ordering) */
 void valkyrie_change_clut(
-	byte *clut_register,
+	volatile byte *clut_register,
 	CTabHandle color_table)
 {
 	short i;

@@ -65,7 +65,7 @@ void set_progress_dialog_message(
 	assert(progress_data.dialog);
 	GetDItem(progress_data.dialog, iPROGRESS_MESSAGE, &item_type, &item_handle, &bounds);
 	getpstr(temporary, strPROGRESS_MESSAGES, message_id);
-	SetIText(item_handle, temporary);
+	SetIText(item_handle, (StringPtr)temporary);
 	
 	return;
 }

@@ -98,6 +98,8 @@ Monday, August 30, 1993 2:57:36 PM
 	hide/show_menu_bar work with multiple monitors, to an extent.
 Wednesday, September 1, 1993 12:11:33 PM
 	moved MostDevice and menu bar routines to DEVICES.C.
+Friday, April 14, 1995 9:50:43 AM  (Jason')
+	added screen saver voodoo.
 */
 
 #include "macintosh_cseries.h"
@@ -105,6 +107,9 @@ Wednesday, September 1, 1993 12:11:33 PM
 #include <ctype.h>
 #include <string.h>
 #include <stdarg.h>
+
+#define AD20x
+#include "AfterDarkGestalt.h"
 
 #ifdef mpwc
 #pragma segment modules
@@ -117,6 +122,8 @@ Wednesday, September 1, 1993 12:11:33 PM
 #define POPUP_ARROW_OFFSET 5
 #define POPUP_ARROW_HEIGHT 6
 #define POPUP_ARROW_WIDTH (2*(POPUP_ARROW_HEIGHT-1))
+
+#define VERS_RESOURCE_ID   1
 
 /* missing from Window.h, probably for a damn good reason :) */
 enum
@@ -192,12 +199,10 @@ static boolean debug_status= TRUE;
 static boolean debug_status= FALSE;
 #endif
 
-#ifdef env68k
-/* non-zero if macsbug is installed on 68k machines */
-#define MacJmp *((Ptr*)0x120)
-#endif
+static boolean debugger_installed= FALSE;
 
 /* ---------- private prototypes */
+static OSErr FSSpecAppendSuffix(FSSpec *source, FSSpec *destination, char *new_suffix);
 
 /* ---------- code */
 
@@ -282,19 +287,22 @@ void modify_menu_item(
 	
 	menu_handle= GetMHandle(menu);
 	assert(menu_handle);
-	
-	if (status)
+
+	if (menu_handle)
 	{
-		EnableItem(menu_handle, item);
-	}
-	else
-	{
-		DisableItem(menu_handle, item);
-	}
-	
-	if (check!=NONE)
-	{
-		CheckItem(menu_handle, item, check);
+		if (status)
+		{
+			EnableItem(menu_handle, item);
+		}
+		else
+		{
+			DisableItem(menu_handle, item);
+		}
+		
+		if (check!=NONE)
+		{
+			CheckItem(menu_handle, item, check);
+		}
 	}
 	
 	return;
@@ -309,19 +317,32 @@ void _assertion_failure(
 	Str255 buffer;
 
 #ifdef DEBUG	
-#ifdef env68k
-	if (MacJmp)
+	if (debugger_installed)
 	{
-		psprintf(buffer, "%s in %s,#%d: %s", fatal ? "halt" : "pause", file, line,
+		psprintf((char *)buffer, "%s in %s,#%d: %s", fatal ? "halt" : "pause", file, line,
 			information ? information : "<no reason given>");
 		DebugStr(buffer);
 	}
 	else
 #endif
-#endif
 	{
-		psprintf(buffer, "Sorry, a run-time assertion failed in “%s” at line #%d.  PLEASE WRITE THIS DOWN AND MAKE A BUG REPORT!", file, line);
-		ParamText(buffer, "\p-1", "", "");
+		Handle fkeyHandle= GetResource('FKEY', 3);
+	
+		/* load and call FKEY 3 to get a screen shot before we draw a dialog over everything */
+	
+		if (fkeyHandle)
+		{
+			LoadResource(fkeyHandle);
+			if (*fkeyHandle)
+			{
+				HLock(fkeyHandle);
+				CallFKEYProc((FKEYUPP) *fkeyHandle);
+				HUnlock(fkeyHandle);
+			}
+		}
+
+		psprintf((char *)buffer, "Sorry, a run-time assertion failed in “%s” at line #%d.  PLEASE WRITE THIS DOWN AND MAKE A BUG REPORT!", file, line);
+		ParamText(buffer, "\p-1", (StringPtr)"", (StringPtr)"");
 		Alert(fatal ? alrtFATAL_ERROR : alrtNONFATAL_ERROR, (ModalFilterUPP) NULL);
 	}
 	
@@ -344,13 +365,13 @@ void alert_user(
 	char buffer[50];
 	
 	psprintf(buffer, "%d", identifier);
-	ParamText(getpstr(temporary, resource_number, error_number), buffer, "", "");
+	ParamText((StringPtr)getpstr(temporary, resource_number, error_number), (StringPtr)buffer, (StringPtr)"", (StringPtr)"");
 	
 	switch(type)
 	{
 		case fatalError:
 			Alert(alrtFATAL_ERROR, (ModalFilterUPP) NULL);
-			ParamText("", "", "", "");
+			ParamText((StringPtr)"", (StringPtr)"", (StringPtr)"", (StringPtr)"");
 			exit(-1);
 		
 		case infoError:
@@ -361,7 +382,7 @@ void alert_user(
 			halt();
 	}
 	
-	ParamText("", "", "", "");
+	ParamText((StringPtr)"", (StringPtr)"", (StringPtr)"", (StringPtr)"");
 	return;
 }
 
@@ -397,6 +418,7 @@ long whats_on_top(
 	return NONE;
 }
 
+#ifdef OBSOLETE
 OSErr choose_new_file(
 	short *file_handle,
 	short *reference_number,
@@ -471,6 +493,7 @@ OSErr choose_and_open_file(
 	
 	return error;
 }
+#endif
 
 void mark_for_update(
 	GrafPtr port,
@@ -541,28 +564,83 @@ void stay_awake(
 	return;
 }
 
-void *new_pointer(
+void *malloc(
 	long size)
 {
 	return NewPtr(size);
 }
 
-void dispose_pointer(
+void free(
 	void *pointer)
 {
-	DisposePtr(pointer);
+	DisposePtr((Ptr)pointer);
 }
 
-void **new_handle(
+// This is the most overloaded routine I've seen in a long time.
+void *realloc(
+	void *pointer,
+	size_t size)
+{
+	if ((pointer==NULL) && (size!=0))
+	{
+		return NewPtr(size);
+	}
+	
+	if (size==0)
+	{
+		if (pointer) DisposePtr((Ptr)pointer);
+		return NULL;
+	}
+	
+	if (size==GetPtrSize((Ptr)pointer)) return pointer;
+	
+	SetPtrSize((Ptr)pointer, size);
+	
+	// SetPtrSize can fail if the pointer couldn't be expanded in place
+	if (MemError())
+	{
+		Size old_size= GetPtrSize((Ptr)pointer);
+		Ptr	realloced_pointer= NewPtr(size);
+
+		// so we make a whole new one if possible
+		if (MemError()) return NULL;
+		
+		// and copy the data into it.
+		BlockMoveData(pointer, realloced_pointer, old_size > size ? size : old_size);
+		// and then destroy the old pointer		
+		DisposePtr((Ptr)pointer);
+		
+		return realloced_pointer;
+	}
+	return pointer;
+}
+
+handle rmalloc(
 	long size)
 {
-	return NewHandle(size);
+	return (handle) NewHandle(size);
 }
 
-void dispose_handle(
-	void **handle)
+void rfree(
+	handle h)
 {
-	DisposeHandle(handle);
+	DisposeHandle((Handle)h);
+}
+
+void *rlock(
+	handle h)
+{
+	HLock((Handle)h);
+	
+	return (void *) *((Handle)h);
+}
+
+void runlock(
+	handle h)
+{
+	HUnlock((Handle)h);
+	
+	return;
 }
 
 void draw_popup_frame(
@@ -591,23 +669,98 @@ char *getpstr(
 	short string_number)
 {
 	Handle strings= GetResource('STR#', resource_number);
-	short count;
-	byte *string_address;
-	
+
 	assert(strings);
-	assert(string_number>=0&&string_number<**((short**)strings));
-	
-	HLock(strings);
-	count= 0;
-	string_address= ((byte *)*strings)+2;
-	while (count++<string_number)
+	if (strings)
 	{
-		string_address+= *string_address+1;
+		short count;
+		byte *string_address;
+		
+		vassert(string_number>=0&&string_number<**((short**)strings),
+			csprintf(temporary, "asked for #%d/#%d in 'STR#' ID#%d", string_number, **((short**)strings), resource_number));
+		
+		HLock(strings);
+		count= 0;
+		string_address= ((byte *)*strings)+2;
+		while (count++<string_number)
+		{
+			string_address+= *string_address+1;
+		}
+		pstrcpy(buffer, (const char *)string_address);
+		HUnlock(strings);
 	}
-	pstrcpy(buffer, string_address);
-	HUnlock(strings);
+	else
+	{
+		*buffer= '\0';
+	}
 	
 	return buffer;
+}
+
+void pstrcat(
+	unsigned char *str1,
+	unsigned char *str2)
+{
+	memmove(str1 + *str1 + 1, str2+1, *str2);
+	*str1+= *str2;
+	
+	return;
+}
+
+OSErr HOpenPath(
+	short vRefNum,
+	long dirID,
+	ConstStr255Param fileName,
+	char permission,
+	short *refNum,
+	short resource_number)
+{
+	OSErr error= HOpen(vRefNum, dirID, fileName, permission, refNum);
+	short path_count= countstr(resource_number);
+	Str255 new_filename;
+	short i;
+	
+	for (i= 0; i<path_count && error!=noErr; ++i)
+	{
+		getpstr((char *)new_filename, resource_number, i);
+		pstrcat(new_filename, (unsigned char *) fileName);
+		
+		error= HOpen(0, 0, new_filename, permission, refNum);
+		if (error==noErr) pstrcpy((char *) fileName, (const char *)new_filename);
+	}
+	
+	return error;
+}
+
+short HOpenResFilePath(
+	short vRefNum,
+	long dirID,
+	ConstStr255Param fileName,
+	char permission,
+	short resource_number)
+{
+	short hndl= HOpenResFile(vRefNum, dirID, fileName, permission);
+	short path_count= countstr(resource_number);
+	Str255 new_filename;
+	short i;
+	
+	for (i= 0; i<path_count && hndl==NONE; ++i)
+	{
+		getpstr((char *)new_filename, resource_number, i);
+		pstrcat(new_filename, (unsigned char *) fileName);
+		
+		hndl= HOpenResFile(0, 0, new_filename, permission);
+	}
+	
+	return hndl;
+}
+
+short countstr(
+	short resource_number)
+{
+	Handle strings= GetResource('STR#', resource_number);
+	
+	return strings ? **((short**)strings) : 0;
 }
 
 char *getcstr(
@@ -616,7 +769,7 @@ char *getcstr(
 	short string_number)
 {
 	getpstr(buffer, resource_number, string_number);
-	p2cstr(buffer);
+	p2cstr((unsigned char *)buffer);
 	
 	return buffer;
 }
@@ -641,6 +794,7 @@ char *strupr(
 	
 	return string;
 }
+
 char *strlwr(
 	char *string)
 {
@@ -652,6 +806,12 @@ char *strlwr(
 	}
 	
 	return string;
+}
+
+unsigned long machine_tick_count(
+	void)
+{
+	return TickCount();
 }
 
 /* calculate a new stdState rectangle based on the maximum bounds, positioned on the device which
@@ -825,8 +985,30 @@ boolean toggle_debug_status(
 	return debug_status;
 }
 
+void initialize_debugger(
+	boolean force_debugger_on)
+{
+#ifdef DEBUG
+
+	/* make sure the standard c library is loaded */
+	sprintf(temporary, "Segment Loader— you’re fired!");
+	
+	debugger_installed= 
+#ifdef env68k
+	/* 0x120 is non-zero if macsbug is installed on 68k machines */
+	(*((Ptr*)0x120) && GetResource('dbug', 128))
+#else
+	(GetResource('dbug', 128))
+#endif
+	? TRUE : force_debugger_on;
+
+#endif
+
+	return;
+}
+
 int dprintf(
-	char *format,
+	const char *format,
 	...)
 {
 	char buffer[257]; /* [length byte] + [255 string bytes] + [null] */
@@ -841,18 +1023,16 @@ int dprintf(
 		
 		*buffer= strlen(buffer+1);
 #ifdef DEBUG
-#ifdef env68k
-		if (MacJmp)
+		if (debugger_installed)
 		{
-			DebugStr(buffer);
+			DebugStr((StringPtr)buffer);
 		}
 		else
 #endif
-#endif
 		{
-			ParamText(buffer, "\p?", "", "");
+			ParamText((StringPtr)buffer, (StringPtr)"\p?", (StringPtr)"", (StringPtr)"");
 			Alert(alrtNONFATAL_ERROR, (ModalFilterUPP) NULL);
-			ParamText("", "", "", "");
+			ParamText((StringPtr)"", (StringPtr)"", (StringPtr)"", (StringPtr)"");
 		}
 	}
 	else
@@ -865,7 +1045,7 @@ int dprintf(
 
 int psprintf(
 	char *buffer,
-	char *format,
+	const char *format,
 	...)
 {
 	va_list arglist;
@@ -896,20 +1076,22 @@ char *csprintf(
 }
 
 OSErr FSFlush(
-	short handle)
+	short hndl,
+	short VRefNum)
 {
 	ParamBlockRec block;
 	OSErr error;
 	
-	block.fileParam.ioCompletion= (ProcPtr) NULL;
-	block.fileParam.ioFRefNum= handle;
+	memset(&block, 0, sizeof(ParamBlockRec));
+	block.fileParam.ioCompletion= (IOCompletionUPP) NULL;
+	block.fileParam.ioFRefNum= hndl;
 	block.fileParam.ioFVersNum= 0;
 	
 	error= PBFlushFile(&block, FALSE);
 	if (error==noErr)
 	{
 		block.fileParam.ioNamePtr= (StringPtr) NULL;
-		block.fileParam.ioVRefNum= 0;
+		block.fileParam.ioVRefNum= VRefNum;
 		error= PBFlushVol(&block, FALSE);
 	}
 	
@@ -925,12 +1107,18 @@ void GetNewTextSpec(
 	
 	resource= GetResource('finf', resource_number);
 	assert(resource);
-
-	/* First short is the count */
-	assert(font_index>=0 && font_index<*((short *) *resource));
-	
-	/* Get to the right one.. */
-	*font_info= *((TextSpecPtr)(*resource+sizeof(short))+font_index);
+	if (resource)
+	{
+		/* First short is the count */
+		assert(font_index>=0 && font_index<*((short *) *resource));
+		
+		/* Get to the right one.. */
+		*font_info= *((TextSpecPtr)(*resource+sizeof(short))+font_index);
+	}
+	else
+	{
+		memset(font_info, 0, sizeof(TextSpecPtr));
+	}
 	
 	return;
 }
@@ -956,4 +1144,224 @@ void GetFont(
 	font_info->size= port->txSize;
 	
 	return;
+}
+
+short get_our_country_code(
+	void)
+{
+	short       country_code;
+	Handle      vers_rsrc;
+	
+	country_code = 0; // this is the U.S. code. an ok default.
+	vers_rsrc = GetResource('vers', VERS_RESOURCE_ID);
+	if (vers_rsrc)
+	{
+		VersRec  *vers;
+		
+		vers = (VersRec *) *vers_rsrc;
+		country_code = vers->countryCode;
+	}
+	
+	return country_code;
+}
+
+short wait_for_click_or_keypress(
+	long maximum_delay)
+{
+	short keycode;
+	EventRecord event;
+	long first_tick= TickCount();
+
+	FlushEvents(keyDownMask|keyUpMask|autoKeyMask|mDownMask|mUpMask, 0);
+
+	do
+	{
+		global_idle_proc();
+	}
+	while (!GetOSEvent(keyDownMask|autoKeyMask|mDownMask, &event) &&
+		(maximum_delay<0 || (TickCount()-first_tick)<maximum_delay));
+
+	switch (event.what)
+	{
+		case nullEvent:
+		case mouseDown:
+			keycode= NONE;
+			break;
+		
+		case keyDown:
+		case autoKey:
+			keycode= (event.message & 0x0000ffff) >> 8;
+			break;
+		
+		default:
+			halt();
+	}
+
+	while (GetOSEvent(keyDownMask|autoKeyMask|mDownMask, &event));
+
+	return keycode;
+}
+
+/* ---------- screen saver voodoo */
+
+enum
+{
+	uppScreenSaverControlProcInfo= kPascalStackBased
+		| RESULT_SIZE(SIZE_CODE(sizeof(OSErr)))
+		| STACK_ROUTINE_PARAMETER(1, SIZE_CODE(sizeof(short)))
+};
+
+static SaverControlProcPtr control_proc;
+static UniversalProcPtr control_proc_upp;
+
+void kill_screen_saver(
+	void)
+{
+	long attributes;
+	OSErr error;
+	
+	error= Gestalt(gestaltScreenSaverAttr, &attributes);
+	if (error==noErr && (attributes&FLAG(gestaltSaverTurnedOn)))
+	{
+		error= Gestalt(gestaltScreenSaverControl, (long *) &control_proc);
+		if (error==noErr)
+		{
+#ifdef env68k
+			error= control_proc(eSaverOff);
+#else	
+			control_proc_upp= (UniversalProcPtr) NewRoutineDescriptor((ProcPtr)control_proc,
+				uppScreenSaverControlProcInfo, kM68kISA);
+
+			if (control_proc_upp)
+			{
+				error= CallUniversalProc(control_proc_upp, uppScreenSaverControlProcInfo, eSaverOff);
+			}
+			else
+			{
+				error= MemError();
+			}
+#endif
+			if (error==noErr)
+			{
+				atexit(restore_screen_saver);
+			}
+		}
+	}
+	
+	return;
+}
+
+void restore_screen_saver(
+	void)
+{
+	OSErr error;
+	
+#ifdef env68k
+	error= control_proc(eSaverOn);
+#else	
+	error= CallUniversalProc(control_proc_upp, uppScreenSaverControlProcInfo, eSaverOn);
+#endif
+	
+	return;
+}
+
+#include <processes.h>
+#include <aliases.h>
+
+static OSErr FSSpecAppendSuffix(
+	FSSpec *source,
+	FSSpec *destination,
+	char *new_suffix)
+{
+	Str255 name;
+	OSErr error;
+	short i;
+	
+	pstrcpy((char *)name, (const char *)source->name);
+	p2cstr(name);
+	for (i= strlen((const char *)name)-1; i; --i)
+	{
+		if (name[i]=='.') name[i]= 0;
+		if (name[i]==':') break;
+	}
+	strcat((char *)name, new_suffix);
+	c2pstr((char *)name);
+	error= FSMakeFSSpec(0, source->parID, name, destination);
+
+	return error;
+}
+
+/* Get a fsspec from a given file, searching the given path... */
+OSErr get_file_spec(
+	FSSpec *spec,
+	short string_resource_id,
+	short file_name_index,
+	short path_resource_id)
+{
+	OSErr err;
+	FSSpec app_spec;
+
+	/* Look for the files in the same directory that we are in.. */	
+	err= get_my_fsspec(&app_spec);
+	if(!err)
+	{
+		Boolean is_folder, was_alias;
+		Str255 fileName, new_filepath;
+		short ii;
+
+		/* Get their name.. */
+		getpstr((char *)fileName, string_resource_id, file_name_index);
+		
+		/* Check the first path.. */
+		memcpy(new_filepath, fileName, *fileName+1);
+		err= FSMakeFSSpec(app_spec.vRefNum, app_spec.parID, new_filepath, spec);
+
+		/* Didn't get the file- search for the paths... */		
+		if(err==fnfErr)
+		{
+			short path_count= countstr(path_resource_id);
+
+			for(ii= 0; ii<path_count; ++ii)
+			{
+				getpstr((char *)new_filepath, path_resource_id, ii);
+				pstrcat(new_filepath, fileName);
+				
+				/* Hmm... check FSMakeFSSpec... */
+				/* Relative pathname.. */
+				err= FSMakeFSSpec(app_spec.vRefNum, app_spec.parID, new_filepath, spec);
+				
+				/* IF we found one... */
+				if(!err) break;
+			}
+		}
+
+		/* Try to resolve it (for aliases) */
+		if(!err)
+		{
+			err= ResolveAliasFile(spec, true, &is_folder, &was_alias);
+		}
+	}
+	
+	return err;
+}
+
+/* Return the process spec of the current process */
+OSErr get_my_fsspec(
+	FSSpec *file)
+{
+	ProcessSerialNumber psn;
+	ProcessInfoRec info;
+	char name[64];
+
+	/* Set our process serial number */
+	psn.highLongOfPSN= 0;
+	psn.lowLongOfPSN= kCurrentProcess;
+
+	/* Setup the parameter block */
+	memset(&info, 0, sizeof(ProcessInfoRec));
+	info.processInfoLength= sizeof(ProcessInfoRec);
+	info.processName= (StringPtr)name;
+	info.processAppSpec= file;
+
+	return (GetProcessInformation(&psn, &info));
 }

@@ -82,4 +82,19 @@ static struct media_definition media_definitions[NUMBER_OF_MEDIA_TYPES]=
 
 		_effect_under_sewage, /* submerged fade effect */
 	},
+
+	/* _media_jjaro */
+	{
+		_collection_walls4, 13, 1, 0, /* collection, shape, shape_count, frequency */
+		_xfer_normal, /* transfer mode */
+		
+		0, {NONE, 0, 0, 0, FIXED_ONE}, /* damage frequency and definition */
+		
+		{_effect_small_jjaro_splash, _effect_medium_jjaro_splash, _effect_large_jjaro_splash, _effect_large_jjaro_emergence}, /* small, medium, large detonation effects */
+		{NONE, NONE, _snd_enter_sewage, _snd_exit_sewage,
+			NONE, _ambient_snd_sewage, _ambient_snd_under_media,
+			_snd_enter_sewage, _snd_exit_sewage},
+
+		_effect_under_sewage, /* submerged fade effect */
+	},
 };

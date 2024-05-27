@@ -18,6 +18,7 @@ Tuesday, October 10, 1995 10:30:58 AM  (Jason)
 #include "projectiles.h"
 #include "player.h"
 #include "platforms.h"
+#include "scenery.h"
 
 #include <string.h>
 
@@ -52,7 +53,7 @@ struct scenery_definition *get_scenery_definition(short scenery_type);
 void initialize_scenery(
 	void)
 {
-	animated_scenery_object_indexes= malloc(sizeof(short)*MAXIMUM_ANIMATED_SCENERY_OBJECTS);
+	animated_scenery_object_indexes= (short *)malloc(sizeof(short)*MAXIMUM_ANIMATED_SCENERY_OBJECTS);
 	assert(animated_scenery_object_indexes);
 	
 	return;

@@ -632,6 +632,10 @@ static shape_descriptor get_motion_sensor_entity_shape(
 			case _civilian_science:
 			case _civilian_security:
 			case _civilian_assimilated:
+			case _vacuum_civilian_crew:
+			case _vacuum_civilian_science:
+			case _vacuum_civilian_security:
+			case _vacuum_civilian_assimilated:
 				shape= friendly_shapes;
 				break;
 			

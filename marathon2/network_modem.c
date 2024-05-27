@@ -283,16 +283,16 @@ static ConnHandle instantiate_connection_record(
 	ConnHandle connection;
 	Str255 tool_name;
 
-	load_connection_tool_name_from_preferences(tool_name);
+	load_connection_tool_name_from_preferences((char *)tool_name);
 	procID= CMGetProcID(tool_name);
 	if(procID==NONE)
 	{
 		OSErr err;
 		
-		err= CRMGetIndToolName(classCM, 1, temporary);
+		err= CRMGetIndToolName(classCM, 1, (StringPtr)temporary);
 		if(!err) 
 		{
-			procID= CMGetProcID(temporary);
+			procID= CMGetProcID((StringPtr)temporary);
 		}
 	}
 	
@@ -458,7 +458,7 @@ static void save_connection_preferences(
 static void load_connection_tool_name_from_preferences(
 	char *name)
 {
-	strcpy(name, "\pSerial Tool");
+	strcpy(name, (char *)"\pSerial Tool");
 	
 	return;
 }

@@ -64,8 +64,8 @@ static void add_node(short parent_node_index, short polygon_index, short depth, 
 void allocate_flood_map_memory(
 	void)
 {
-	nodes= malloc(MAXIMUM_FLOOD_NODES*sizeof(struct node_data));
-	visited_polygons= malloc(MAXIMUM_POLYGONS_PER_MAP*sizeof(short));
+	nodes= (struct node_data *)malloc(MAXIMUM_FLOOD_NODES*sizeof(struct node_data));
+	visited_polygons= (short *)malloc(MAXIMUM_POLYGONS_PER_MAP*sizeof(short));
 	assert(nodes&&visited_polygons);
 	
 	return;

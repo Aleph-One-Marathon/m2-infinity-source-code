@@ -34,7 +34,7 @@ struct physics_constants
 };
 
 /* ---------- globals */
-
+#ifndef DONT_COMPILE_DEFINITIONS
 struct physics_constants physics_models[NUMBER_OF_PHYSICS_MODELS]=
 {
 	/* game walking */
@@ -73,3 +73,4 @@ struct physics_constants physics_models[NUMBER_OF_PHYSICS_MODELS]=
 		FIXED_ONE/32 /* camera separation */
 	},
 };
+#endif

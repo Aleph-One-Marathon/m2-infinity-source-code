@@ -10,7 +10,7 @@
 #include "projectiles.h"
 #include "player.h"
 #include "weapons.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "interface.h"
 #include "items.h"
 #include "monsters.h"
@@ -939,6 +939,7 @@ static void debug_weapon(
 		case _weapon_missile_launcher:
 		case _weapon_flamethrower:
 		case _weapon_alien_shotgun:
+		case _weapon_smg:
 			break;
 			
 		default:
@@ -1491,6 +1492,7 @@ static struct trigger_definition *get_trigger_definition(
 	{
 		case _weapon_missile_launcher:
 		case _weapon_flamethrower:
+		case _weapon_smg:
 			vassert(which_trigger==_primary_weapon, csprintf(temporary, "which: %d weapon: %d",
 				which_trigger, which_weapon));
 			break;

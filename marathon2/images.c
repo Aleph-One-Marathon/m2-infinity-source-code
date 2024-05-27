@@ -13,6 +13,7 @@
 #include "portable_files.h"
 #include "images.h"
 #include "screen.h" // for build_direct_color_table
+#include "textures.h"
 
 extern short interface_bit_depth;
 extern WindowPtr screen_window;
@@ -92,7 +93,8 @@ void set_scenario_images_file(
 	
 	ResolveAliasFile((FSSpec *) file, TRUE, &is_folder, &was_aliased);
 	scenario_file_handle= FSpOpenResFile((FSSpec *) file, fsRdPerm);
-	assert(!ResError());
+	vassert(!ResError(), csprintf(temporary, "ResError was #%d, FileHandle is %08X, spec follows ;dm %08X fsspec",
+			ResError(), scenario_file_handle, file));
 
 	return;
 }
@@ -307,8 +309,14 @@ void scroll_full_screen_pict_resource_from_scenario(
 						SetRect(&source, 0, 0, screen_width, screen_height);
 						OffsetRect(&source, scroll_horizontal ? delta : 0, scroll_vertical ? delta : 0);
 
+#if SUPPORT_DRAW_SPROCKET
+						DSpContext_InvalBackBufferRect(gDrawContext,  &source );
+						DSpContext_SwapBuffers(gDrawContext, NULL, NULL);
+//						DSpContext_GetBackBuffer( gDrawContext, kDSpBufferKind_Normal, (CGrafPtr *)&world_pixels );
+#else
 						CopyBits((BitMapPtr)*pixels->portPixMap, &screen_window->portBits,
 							&source, &destination, srcCopy, (RgnHandle) NULL);
+#endif		
 						
 						/* You can't do this, because it calls flushevents every time.. */
 //						if(wait_for_click_or_keypress(0)!=NONE) done= TRUE;
@@ -445,30 +453,47 @@ static void draw_picture(
 //			(RECTANGLE_HEIGHT(&window->portRect)-RECTANGLE_HEIGHT(&bounds))/2 + window->portRect.top);
 
 		GetPort(&old_port);
+#if !SUPPORT_DRAW_SPROCKET
 		SetPort(window);
+#else
+		SetPort( (GrafPtr)world_pixels );
+#endif
 
 		{
 			RgnHandle new_clip_region= NewRgn();
 			
 			if (new_clip_region)
 			{
+#if !SUPPORT_DRAW_SPROCKET
 				RgnHandle old_clip_region= window->clipRgn;
 
 				SetRectRgn(new_clip_region, 0, 0, 640, 480);
 				SectRgn(new_clip_region, old_clip_region, new_clip_region);
 				window->clipRgn= new_clip_region;
+#endif
 
 				HLock((Handle) picture);
 				DrawPicture(picture, &bounds);
 				HUnlock((Handle) picture);
 				
+#if SUPPORT_DRAW_SPROCKET
+				DSpContext_InvalBackBufferRect( gDrawContext, &bounds );
+				DSpContext_SwapBuffers( gDrawContext, NULL, NULL );
+//				DSpContext_GetBackBuffer( gDrawContext, kDSpBufferKind_Normal, (CGrafPtr *)&world_pixels );
+#endif
+
+#if !SUPPORT_DRAW_SPROCKET
 				window->clipRgn= old_clip_region;
 				
 				DisposeRgn(new_clip_region);
+#endif
 			}
 		}
 		
+#if !SUPPORT_DRAW_SPROCKET
 		ValidRect(&window->portRect);
+#endif
+
 		SetPort(old_port);
 		
 		if (!(HGetState((Handle)picture) & 0x40)) ReleaseResource((Handle) picture);

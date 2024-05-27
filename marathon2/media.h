@@ -13,6 +13,7 @@ enum /* media types */
 	_media_lava,
 	_media_goo,
 	_media_sewage,
+	_media_jjaro,
 	NUMBER_OF_MEDIA_TYPES
 };
 

@@ -166,13 +166,16 @@ void place_initial_objects(
 
 	dynamic_world->current_civilian_causalties= dynamic_world->current_civilian_count= 0;
 
-	for (index= 1; index<NUMBER_OF_MONSTER_TYPES; index++)
+	if (GET_GAME_OPTIONS()&_monsters_replenish)
 	{
-		if (monster_placement_info[index].initial_count)
+		for (index= 1; index<NUMBER_OF_MONSTER_TYPES; index++)
 		{
-			add_objects(_object_is_monster, index, monster_placement_info[index].initial_count, TRUE);
+			if (monster_placement_info[index].initial_count)
+			{
+				add_objects(_object_is_monster, index, monster_placement_info[index].initial_count, TRUE);
+			}
+			dynamic_world->random_monsters_left[index] = monster_placement_info[index].random_count;
 		}
-		dynamic_world->random_monsters_left[index] = monster_placement_info[index].random_count;
 	}
 	
 	for (index= 0; index<NUMBER_OF_DEFINED_ITEMS; index++)

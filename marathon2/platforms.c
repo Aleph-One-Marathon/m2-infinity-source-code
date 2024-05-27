@@ -30,7 +30,7 @@ Tuesday, July 11, 1995 11:32:46 AM  (Jason)
 #include "map.h"
 #include "platforms.h"
 #include "lightsource.h"
-#include "sound.h"
+#include "game_sound.h"
 #include "player.h"
 #include "media.h"
 
@@ -887,7 +887,12 @@ static void calculate_platform_extrema(
 	world_distance lowest_adjacent_floor, highest_adjacent_ceiling;
 	world_distance highest_adjacent_floor, lowest_adjacent_ceiling;
 
-	assert(lowest_level==NONE||highest_level==NONE||lowest_level<highest_level);
+	/* This used to be an assert, but it got changed to an if so you could properly open merged maps */
+	if (!(lowest_level==NONE||highest_level==NONE||lowest_level<highest_level))
+	{
+		lowest_level= NONE;
+		highest_level= NONE;
+	}
 	
 	/* calculate lowest and highest adjacent floors and ceilings */
 	lowest_adjacent_floor= highest_adjacent_floor= polygon->floor_height;

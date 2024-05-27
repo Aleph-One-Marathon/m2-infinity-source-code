@@ -28,7 +28,7 @@ Wednesday, October 19, 1994 3:50:46 PM  (Jason')
 #define NAMES_LIST_BUFFER_SIZE      4096
 #define MAXIMUM_LOOKUP_NAME_COUNT     40
 
-#define MAXIMUM_ZONE_NAMES 400
+#define MAXIMUM_ZONE_NAMES 1000
 
 /* ---------- structures */
 
@@ -93,9 +93,9 @@ OSErr NetLookupOpen(
 	assert(!lookupMPPPBPtr);
 
 	/* Note that this utilizes the mac extension for pstrings.. */
-	sprintf(type_with_version, "%P%d", type, version);
-	assert(strlen(type_with_version)<32);
-	c2pstr(type_with_version);
+	sprintf((char *)type_with_version, "%P%d", type, version);
+	assert(strlen((const char *)type_with_version)<32);
+	c2pstr((char *)type_with_version);
 
 	/* Type is pstring */
 	lookupMPPPBPtr= (MPPPBPtr) NewPtrClear(sizeof(MPPParamBlock));
@@ -106,7 +106,7 @@ OSErr NetLookupOpen(
 	error= MemError();
 	if (error==noErr)
 	{
-		NBPSetEntity((Ptr)lookupEntity, name, type_with_version, zone);
+		NBPSetEntity((Ptr)lookupEntity, (StringPtr)name, type_with_version, (StringPtr)zone);
 		lookupMPPPBPtr->NBP.interval= 4; /* 4*8 ticks == 32 ticks */
 		lookupMPPPBPtr->NBP.count= 2; /* 2 retries == 64 ticks */
 		lookupMPPPBPtr->NBP.ioCompletion= (XPPCompletionUPP) NULL; /* no completion routine */
@@ -357,7 +357,7 @@ OSErr NetGetZonePopupMenu(
 			for (i= 0; i<zone_count; ++i)
 			{
 				AppendMenu(menu, "\p ");
-				SetItem(menu, i+1, zone_names + i*sizeof(Str32));
+				SetItem(menu, i+1, (StringPtr)(zone_names + i*sizeof(Str32)));
 			}
 
 			CheckItem(menu, *local_zone, TRUE);
@@ -407,11 +407,11 @@ OSErr NetGetZoneList(
 				byte *read;
 				short i;
 				
-				for (i= 0, read= zip_buffer;
+				for (i= 0, read= (unsigned char *)zip_buffer;
 					i<xpb->XCALL.zipNumZones && *zone_count<maximum_zone_names;
 					++i, read+= *read+1)
 				{
-					pstrcpy(zone_names + (*zone_count)*sizeof(Str32), read);
+					pstrcpy(zone_names + (*zone_count)*sizeof(Str32), (const char *)read);
 					(*zone_count)+= 1;
 				}
 			}
@@ -424,7 +424,7 @@ OSErr NetGetZoneList(
 			short i;
 			
 			/* sort the list */
-			qsort(zone_names, *zone_count, sizeof(Str32), zone_name_compare);
+			qsort(zone_names, *zone_count, sizeof(Str32), (int (*)(const void *, const void *)) zone_name_compare);
 	
 			/* get our local zone name and locate it in the list */
 			error= NetGetLocalZoneName(local_zone_name);
@@ -433,7 +433,7 @@ OSErr NetGetZoneList(
 				*local_zone= 0;
 				for (i= 0; i<*zone_count; ++i)
 				{
-					if (!IUCompString(local_zone_name, zone_names + i*sizeof(Str32)))
+					if (!IUCompString(local_zone_name, (StringPtr)(zone_names + i*sizeof(Str32))))
 					{
 						*local_zone= i;
 						break;
@@ -487,5 +487,5 @@ static int zone_name_compare(
 	char *elem1,
 	char *elem2)
 {
-	return IUCompString(elem1, elem2);
+	return IUCompString((StringPtr)elem1, (StringPtr)elem2);
 }

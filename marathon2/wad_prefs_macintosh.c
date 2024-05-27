@@ -65,7 +65,7 @@ boolean set_preferences(
 	{
 		AppendMenu(mHandle, "\p ");
 		getpstr(temporary, funcs[index].resource_group, funcs[index].string_index);
-		SetMenuItemText(mHandle, index+1, temporary);
+		SetMenuItemText(mHandle, index+1, (StringPtr)temporary);
 	}
 	
 	/* Set our max value.. */

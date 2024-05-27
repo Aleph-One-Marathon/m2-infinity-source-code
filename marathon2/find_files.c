@@ -13,7 +13,7 @@
 #endif
 
 /* --------- local prototypes */
-static int alphabetical_names(const FSSpec *a, const FSSpec *b);
+static int alphabetical_names(const void *a, const void *b);
 static OSErr enumerate_files(struct find_file_pb *param_block, long directory_id);
 	
 /* ---------------- Parameter Block Version */
@@ -145,8 +145,8 @@ static OSErr enumerate_files(
 }
 
 static int alphabetical_names(
-	const FSSpec *a, 
-	const FSSpec *b)
+	const void *a,
+	const void *b)
 {
-	return (IUCompString(a->name, b->name)); 
+	return (IUCompString(((FSSpec *)a)->name, ((FSSpec *)b)->name)); 
 }
